@@ -1,3 +1,6 @@
+#pragma once
+#include "device.hpp"
+
 #include <Windows.h>
 #include <string>
 #include <stdexcept>
@@ -6,32 +9,9 @@
 #include <vector>
 #include <algorithm>
 
-class device
-{
-private:
-    std::string type;
-
-public:
-    std::string serialNumber;
-    
-    void assignType(const std::string& typeStr) {
-        type = (typeStr == "PM240" || typeStr == "PM100") ? typeStr : "none";
-    }
-
-    bool isPM240() {
-        if (type.empty() || type == "none") throw std::runtime_error("Missing type assignment");
-        return (type == "PM240") ? true : false;
-    }
-
-    bool isPM100() {
-        if (type.empty() || type == "none") throw std::runtime_error("Missing type assignment");
-        return (type == "PM100") ? true : false;
-    }
-};
-
 // Run Passmark executable from cmd prompt and return info provided
-std::string runCommand(device tester, const std::string& commandArg) {
-    std::string commandBase = (tester.isPM240()) ? "USBPDPROConsole.exe " : (tester.isPM100()) ? "USBPDConsole.exe " : "Invalid device type";
+std::string runCommand(const device& dev, const std::string& commandArg) {
+    std::string commandBase = (dev.isPM240()) ? "USBPDPROConsole.exe " : (dev.isPM100()) ? "USBPDConsole.exe " : "Invalid device type";
     std::string command = commandBase + commandArg;
     
     HANDLE hRead, hWrite;
@@ -100,8 +80,8 @@ void removeBlankLines(std::string& string_to_filter) {
 }
 
 struct deviceList {
-    int count = 0, countPM240 = 0, countPM100 = 0;
     std::vector<std::string> devices;
+    std::vector<std::string> type;
 };
 
 // Find all available PM240 and PM100 devices
@@ -120,12 +100,10 @@ deviceList findDevices() {
         while (getline(ss, line)) {
             size_t pos = line.find("=");
             if (pos != std::string::npos) {
-                list.count += 1;
-                std::cout << "(" << list.count << ")\t" << output << std::endl;
+                list.type.push_back(deviceType);
                 std::string tempStr = line.substr(pos + 1);
                 list.devices.push_back(tempStr);
-                if (deviceType == "PM240") list.countPM240 += 1;
-                else list.countPM100 += 1;
+                std::cout << "(" << list.devices.size() << ") " << output << std::endl;
             }
         }
     };
@@ -137,4 +115,30 @@ deviceList findDevices() {
     poll("PM100");
 
     return list;
+}
+
+std::vector<device> getDevices() {
+    // Find available Passmark devices
+    deviceList list;
+    list = findDevices();
+
+    // User selects device(s)
+    std::cout << "Enter device(s) to be used. For multiple devices, separate device numbers with commas. Do not use spaces.\n";
+    std::string selection;
+    getline(std::cin, selection);
+
+    // Initialize device objects
+    std::vector<device> testDevice;
+    std::stringstream ss(selection);
+    std::string field;
+    while (getline(ss, field, ',')) { // Check user selection is valid and store information to device objects
+        device placeHolder;
+        int deviceIdx = std::stoi(field) - 1;
+        if (placeHolder.tryClaim(list.devices[deviceIdx])) {
+            placeHolder.assignType(list.type[deviceIdx]);
+            testDevice.push_back(std::move(placeHolder));
+        }
+    }
+
+    return testDevice;
 }

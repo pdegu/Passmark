@@ -1,0 +1,1 @@
+g++ -std=c++11 USB_Protocol_Test.cpp device.cpp -o ../USB_Protocol_Test.exe

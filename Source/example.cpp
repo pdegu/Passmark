@@ -12,5 +12,8 @@ int main () {
         return -1;
     }
 
+    // Declare PM240 objects
+    device tester[2];
+
     return 0;
 }
