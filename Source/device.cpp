@@ -1,4 +1,5 @@
 #include "device.hpp"
+#include "Passmark.hpp"
 #include <Windows.h>
 #include <iostream>
 
@@ -39,4 +40,17 @@ device::~device() {
         CloseHandle(hMutex);
         std::cout << "DEBUG: Released lock for " << serialNumber << std::endl;
     }
+}
+
+std::string device::getProfiles() const {
+    std::string output = "";
+
+    if (!serialNumber.empty()) {
+        std::string commandArg = "-d " + this->serialNumber + " -p";
+        output = runCommand(*this, commandArg);
+        removeBlankLines(output);
+        std:: cout << output << std::endl;
+    } else std::cout << "uh oh..." << std::endl;
+
+    return output;
 }

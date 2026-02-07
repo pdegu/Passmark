@@ -13,6 +13,7 @@ private:
 public:
     std::string serialNumber;
 
+    // Constructors and destructors
     device(); // Default constructor
     device(device&& other) noexcept; // Move constructor, argument is temporary device object
     ~device(); // Deconstructor
@@ -21,8 +22,12 @@ public:
     device(const device&) = delete;
     device& operator=(const device&) = delete;
 
+    // Declarations for functions defined in device.cpp
     bool tryClaim(std::string sn);
+
+    std::string getProfiles() const;
     
+    // Other simple functions that do not require external logic
     void assignType(const std::string& typeStr) {
         type = (typeStr == "PM240" || typeStr == "PM100") ? typeStr : "none";
     }

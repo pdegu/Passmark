@@ -9,7 +9,23 @@
 #include <vector>
 #include <algorithm>
 
+// (((())))
+// (((())))
+// (((())))
+// (((())))
+// NEED TO MOVE runCommand INTO ITS OWN CPP FILE. AND GENERALLY FUNCTION DECLARATIONS SHOULD BE IN CPP FILES, NOT HEADERS. NEED TO REVIEW CODE AND MODIFY ACCORDINGLY. 
+// (((())))
+// (((())))
+// (((())))
+// (((())))
+
 // Run Passmark executable from cmd prompt and return info provided
+// 
+// NOTE:
+// *****************************************************************
+// - Avoid using runCommand outside of device.cpp
+// - Define new member function for device if needed
+// *****************************************************************
 std::string runCommand(const device& dev, const std::string& commandArg) {
     std::string commandBase = (dev.isPM240()) ? "USBPDPROConsole.exe " : (dev.isPM100()) ? "USBPDConsole.exe " : "Invalid device type";
     std::string command = commandBase + commandArg;
@@ -131,13 +147,15 @@ std::vector<device> getDevices() {
     std::vector<device> testDevice;
     std::stringstream ss(selection);
     std::string field;
-    while (getline(ss, field, ',')) { // Check user selection is valid and store information to device objects
+    while (getline(ss, field, ',')) { // Check user selection is valid and store information to device object vector
         device placeHolder;
         int deviceIdx = std::stoi(field) - 1;
+
+        // Check if device is in use
         if (placeHolder.tryClaim(list.devices[deviceIdx])) {
             placeHolder.assignType(list.type[deviceIdx]);
-            testDevice.push_back(std::move(placeHolder));
-        }
+            testDevice.push_back(std::move(placeHolder)); 
+        } else throw std::runtime_error(list.devices[deviceIdx] + " is in use.");
     }
 
     return testDevice;
