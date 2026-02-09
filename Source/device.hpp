@@ -1,6 +1,14 @@
 #pragma once
 #include <string>
-#include <stdexcept>
+#include <vector>
+
+struct deviceList {
+    std::vector<std::string> devices;
+    std::vector<std::string> type;
+};
+
+// Find all connected PM240 and PM100 devices
+deviceList findDevices();
 
 typedef void* HANDLE;
 
@@ -25,20 +33,21 @@ public:
     // Declarations for functions defined in device.cpp
     bool tryClaim(std::string sn);
 
+    // Get supported profiles from DUT
     std::string getProfiles() const;
     
-    // Other simple functions that do not require external logic
-    void assignType(const std::string& typeStr) {
-        type = (typeStr == "PM240" || typeStr == "PM100") ? typeStr : "none";
-    }
+    // Assign device type
+    void assignType(const std::string& typeStr);
 
-    bool isPM240() const {
-        if (type.empty() || type == "none") throw std::runtime_error("Missing type assignment");
-        return (type == "PM240") ? true : false;
-    }
+    // Return true if device type is PM240
+    bool isPM240() const;
 
-    bool isPM100() const {
-        if (type.empty() || type == "none") throw std::runtime_error("Missing type assignment");
-        return (type == "PM100") ? true : false;
-    }
+    // Return true if device type is PM100
+    bool isPM100() const;
 };
+
+// Run Passmark executable from cmd prompt and return info provided
+std::string runCommand(const device& dev, const std::string& commandArg);
+
+// Remove blank lines from Passmark console output string
+void removeBlankLines(std::string& string_to_filter);
