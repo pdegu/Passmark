@@ -1,10 +1,14 @@
 #pragma once
 
 // Project headers
-#include "device.hpp"
+#include "tester.hpp"
 
 // Standard headers
 #include <vector>
+#include <Windows.h>
 
-// Check which devices are available and claim
-std::vector<device> getDevices();
+// Check if string is numeric
+bool is_numeric(std::string numStr);
+
+// Check which testers are available and claim
+std::vector<tester> getTesters();

@@ -5,30 +5,41 @@
 #include <stdexcept>
 #include <iostream>
 #include <vector>
+#include <Windows.h>
 
-std::vector<device> getDevices() {
-    // Find available Passmark devices
-    deviceList list = findDevices();
-
-    // User selects device(s)
-    std::cout << "Enter device(s) to be used. For multiple devices, separate device numbers with commas. Do not use spaces.\n";
-    std::string selection;
-    getline(std::cin, selection);
-
-    // Initialize device objects
-    std::vector<device> testDevice;
-    std::stringstream ss(selection);
-    std::string field;
-    while (getline(ss, field, ',')) { // Check user selection is valid and store information to device object vector
-        device placeHolder;
-        int deviceIdx = std::stoi(field) - 1;
-
-        // Check if device is in use
-        if (placeHolder.tryClaim(list.devices[deviceIdx])) {
-            placeHolder.assignType(list.type[deviceIdx]);
-            testDevice.push_back(std::move(placeHolder)); 
-        } else throw std::runtime_error(list.devices[deviceIdx] + " is in use.");
+bool is_numeric(std::string numStr) {
+    for (char c : numStr) {
+        if (!isdigit(c)) return false;
     }
 
-    return testDevice;
+    return true;
+}
+
+std::vector<tester> getTesters() {
+    // Find available Passmark testers
+    testerList list = findTesters();
+
+    // User selects tester(s)
+    std::cout << "Enter tester(s) to be used. For multiple testers, separate tester numbers with commas. Do not use spaces.\n";
+    std::string selection;
+    getline(std::cin, selection);
+    if (selection.empty()) throw std::runtime_error("No tester(s) selected.");
+
+    // Initialize tester objects
+    std::vector<tester> validTesters;
+    std::stringstream ss(selection);
+    std::string field;
+    while (getline(ss, field, ',')) { // Check user selection is valid and store information to tester object vector
+        tester placeHolder;
+        if (!is_numeric(field)) throw std::runtime_error("Tester selection must be an interger!");
+        int testerIdx = std::stoi(field) - 1;
+
+        // Check if tester is in use
+        if (placeHolder.tryClaim(list.testers[testerIdx])) {
+            placeHolder.assignType(list.type[testerIdx]);
+            validTesters.push_back(std::move(placeHolder)); 
+        } else throw std::runtime_error(list.testers[testerIdx] + " is in use.");
+    }
+
+    return validTesters;
 }

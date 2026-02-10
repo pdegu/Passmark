@@ -1,4 +1,4 @@
-#include "device.hpp"
+#include "tester.hpp"
 
 #include <Windows.h>
 #include <iostream>
@@ -8,52 +8,55 @@
 #include <vector>
 
 // ----------------------------------------
-// Device class member function definitions
+// Tester class member function definitions
 // ----------------------------------------
 
-deviceList findDevices() {
-    deviceList list;
-    device virtualDevice;
+testerList findTesters() {
+    testerList list;
+    tester virtualtester;
 
-    // Lambda to handle device polling and storing info
-    auto poll = [&](const std::string& deviceType) {
-        virtualDevice.assignType(deviceType);
-        std::string output = runCommand(virtualDevice, "-f");
+    // Lambda to handle tester polling and storing info
+    auto poll = [&](const std::string& testerType) {
+        virtualtester.assignType(testerType);
+        std::string output = runCommand(virtualtester, "-f");
         removeBlankLines(output);
-        std::cout << deviceType << " devices:\n";
+        std::cout << testerType << " testers:\n";
         std::stringstream ss(output);
         std::string line;
         while (getline(ss, line)) {
             size_t pos = line.find("=");
             if (pos != std::string::npos) {
-                list.type.push_back(deviceType);
+                list.type.push_back(testerType);
                 std::string tempStr = line.substr(pos + 1);
-                list.devices.push_back(tempStr);
-                std::cout << "(" << list.devices.size() << ") " << output << std::endl;
+                list.testers.push_back(tempStr);
+                std::cout << "(" << list.testers.size() << ") " << output << std::endl;
             }
         }
     };
 
-    // Poll PM240 devices
+    // Poll PM240 testers
     poll("PM240");
 
-    //Poll PM100 devices
+    //Poll PM100 testers
     poll("PM100");
+
+    // Check if no testers were found
+    if (list.testers.empty()) throw std::runtime_error("No testers found.");
 
     return list;
 }
 
-device::device() : hMutex(NULL), serialNumber(""), type("") {}
+tester::tester() : hMutex(NULL), serialNumber(""), type("") {}
 
-device::device(device&& other) noexcept // Logic for move constructor
-    : hMutex(other.hMutex), // Copy mutex from temporary device
-    serialNumber(other.serialNumber), // Copy serial number from temporary device
-    type(other.type) // Copy type from temporary device
+tester::tester(tester&& other) noexcept // Logic for move constructor
+    : hMutex(other.hMutex), // Copy mutex from temporary tester
+    serialNumber(other.serialNumber), // Copy serial number from temporary tester
+    type(other.type) // Copy type from temporary tester
 {
-    other.hMutex = NULL; // temporary device mutex must be NULL after copy or destructor will close copied mutex
+    other.hMutex = NULL; // temporary tester mutex must be NULL after copy or destructor will close copied mutex
 }
 
-device::~device() {
+tester::~tester() {
     if (hMutex != NULL) { // Only release if a mutex is claimed
         ReleaseMutex(hMutex);
         CloseHandle(hMutex);
@@ -61,7 +64,7 @@ device::~device() {
     }
 }
 
-bool device::tryClaim(std::string sn) {
+bool tester::tryClaim(std::string sn) {
     // Build unique gloable name for mutex
     std::string mutexName = "Global\\Lock_SN_" + sn;
 
@@ -82,7 +85,7 @@ bool device::tryClaim(std::string sn) {
     return true;
 }
 
-std::string device::getProfiles() const {
+std::string tester::getProfiles() const {
     std::string output = "";
 
     if (!serialNumber.empty()) {
@@ -90,31 +93,54 @@ std::string device::getProfiles() const {
         output = runCommand(*this, commandArg);
         removeBlankLines(output);
         std:: cout << output << std::endl;
-    } else std::cout << "uh oh..." << std::endl;
+    }
 
     return output;
 }
 
-void device::assignType(const std::string& typeStr) {
+void tester::assignType(const std::string& typeStr) {
     type = (typeStr == "PM240" || typeStr == "PM100") ? typeStr : "none";
 }
 
-bool device::isPM240() const {
+bool tester::isPM240() const {
     if (type.empty() || type == "none") throw std::runtime_error("Missing type assignment");
     return (type == "PM240") ? true : false;
 }
 
-bool device::isPM100() const {
+bool tester::isPM100() const {
     if (type.empty() || type == "none") throw std::runtime_error("Missing type assignment");
     return (type == "PM100") ? true : false;
+}
+
+void tester::operateHardware(std::string inputStr) const {
+    // Attempt to take mutex lock for tester
+    DWORD waitResult = WaitForSingleObject(this->hMutex, 5000); // Wait for 5 seconds to acquire lock before timing out and throwing error
+
+    if (waitResult == WAIT_OBJECT_0) {
+        // Worker thread has acquired the lock and can safely run tests
+        std::cout << "Lock acquired for " << serialNumber << std::endl;
+
+        // Insert member function here
+        std::cout << "Hardcore hardware operating!!!!" << std::endl;
+        ReleaseMutex(this->hMutex); // Release lock after testing is done
+    } else {
+        // FAILURE: Throw an error that the wrapper will catch
+        if (waitResult == WAIT_TIMEOUT) {
+            throw std::runtime_error("Mutex timeout: Device is busy or stuck.");
+        } else if (waitResult == WAIT_ABANDONED) {
+            throw std::runtime_error("Mutex abandoned: Previous owner crashed.");
+        } else {
+            throw std::runtime_error("Mutex failed with system error: " + std::to_string(GetLastError()));
+        }
+    }
 }
 
 // ----------------------------------------
 // Other functions
 // ----------------------------------------
 
-std::string runCommand(const device& dev, const std::string& commandArg) {
-    std::string commandBase = (dev.isPM240()) ? "USBPDPROConsole.exe " : (dev.isPM100()) ? "USBPDConsole.exe " : "Invalid device type";
+std::string runCommand(const tester& dev, const std::string& commandArg) {
+    std::string commandBase = (dev.isPM240()) ? "USBPDPROConsole.exe " : (dev.isPM100()) ? "USBPDConsole.exe " : "Invalid tester type";
     std::string command = commandBase + commandArg;
     
     HANDLE hRead, hWrite;
@@ -179,4 +205,30 @@ void removeBlankLines(std::string& string_to_filter) {
             string_to_filter.erase(i, 1);
         }
     }
+}
+
+DWORD WINAPI TesterThreadWrapper(LPVOID lpParam) {
+    threadParams* params = static_cast<threadParams*>(lpParam); // Cast the void pointer to threadParams pointer
+    // Ensure pointer isn't null
+    if (params == nullptr) return ERROR_INVALID_PARAMETER;
+
+    tester* activeTester = params->activeTester; // Extract the active tester from the parameters
+    std::string inputStr = params->input; // Extract the input string from the parameters
+
+    DWORD exitCode = 0;
+
+    try {
+        // Jump into class logic
+        activeTester->operateHardware(inputStr);
+    } catch (const std::exception& e) {
+        std::cerr << "Thread error (" << activeTester->serialNumber << "): " << e.what() << std::endl;
+        exitCode = ERROR_SERVICE_SPECIFIC_ERROR; // Use a generic error code for exceptions
+    } catch (...) {
+        std::cerr << "Thread error (" << activeTester->serialNumber << "): Unknown error occurred." << std::endl;
+        exitCode = ERROR_PROCESS_ABORTED; // Use a generic error code for unknown exceptions
+    }
+
+    delete params; // Clean up dynamically allocated parameters
+    
+    return exitCode; // Return exit code to indicate success or type of failure
 }

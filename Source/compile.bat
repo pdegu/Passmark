@@ -1,1 +1,1 @@
-g++ -std=c++11 USB_Protocol_Test.cpp Passmark.cpp device.cpp -o ../USB_Protocol_Test.exe
+g++ -std=c++11 USB_Protocol_Test.cpp Passmark.cpp tester.cpp -o ../USB_Protocol_Test.exe
