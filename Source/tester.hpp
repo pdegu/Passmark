@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <Windows.h>
+#include <functional>
 
 struct testerList {
     std::vector<std::string> testers;
@@ -44,7 +45,7 @@ public:
     // Return true if tester type is PM100
     bool isPM100() const;
 
-    // Lock tester for testing
+    // Lock tester and run core 
     void operateHardware(std::string inputStr) const;
 };
 
@@ -53,11 +54,3 @@ std::string runCommand(const tester& dev, const std::string& commandArg);
 
 // Remove blank lines from Passmark console output string
 void removeBlankLines(std::string& string_to_filter);
-
-struct threadParams {
-    tester* activeTester;
-    std::string input;
-};
-
-// Wrapper to enable member function calls in threads
-DWORD WINAPI TesterThreadWrapper(LPVOID lpParam);

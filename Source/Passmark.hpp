@@ -2,6 +2,7 @@
 
 // Project headers
 #include "tester.hpp"
+#include "ThreadBridge.hpp"
 
 // Standard headers
 #include <vector>

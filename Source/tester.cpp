@@ -116,14 +116,20 @@ void tester::operateHardware(std::string inputStr) const {
     // Attempt to take mutex lock for tester
     DWORD waitResult = WaitForSingleObject(this->hMutex, 5000); // Wait for 5 seconds to acquire lock before timing out and throwing error
 
+    auto toConsole = [&](std::string message) {
+        std::cout << "(" << this->serialNumber << ")\t" << message << std::endl;
+    };
+
     if (waitResult == WAIT_OBJECT_0) {
         // Worker thread has acquired the lock and can safely run tests
-        std::cout << "Lock acquired for " << serialNumber << std::endl;
+        std::cout << "DEBUG: Lock acquired for " << serialNumber << std::endl;
 
         // Insert member function here
-        std::cout << "Hardcore hardware operating!!!!" << std::endl;
+        toConsole("Parkour!");
+
         ReleaseMutex(this->hMutex); // Release lock after testing is done
     } else {
+        std::cout << "Tell me why!!!" << std::endl;
         // FAILURE: Throw an error that the wrapper will catch
         if (waitResult == WAIT_TIMEOUT) {
             throw std::runtime_error("Mutex timeout: Device is busy or stuck.");
@@ -139,8 +145,8 @@ void tester::operateHardware(std::string inputStr) const {
 // Other functions
 // ----------------------------------------
 
-std::string runCommand(const tester& dev, const std::string& commandArg) {
-    std::string commandBase = (dev.isPM240()) ? "USBPDPROConsole.exe " : (dev.isPM100()) ? "USBPDConsole.exe " : "Invalid tester type";
+std::string runCommand(const tester& Tester, const std::string& commandArg) {
+    std::string commandBase = (Tester.isPM240()) ? "USBPDPROConsole.exe " : (Tester.isPM100()) ? "USBPDConsole.exe " : "Invalid tester type";
     std::string command = commandBase + commandArg;
     
     HANDLE hRead, hWrite;
@@ -205,30 +211,4 @@ void removeBlankLines(std::string& string_to_filter) {
             string_to_filter.erase(i, 1);
         }
     }
-}
-
-DWORD WINAPI TesterThreadWrapper(LPVOID lpParam) {
-    threadParams* params = static_cast<threadParams*>(lpParam); // Cast the void pointer to threadParams pointer
-    // Ensure pointer isn't null
-    if (params == nullptr) return ERROR_INVALID_PARAMETER;
-
-    tester* activeTester = params->activeTester; // Extract the active tester from the parameters
-    std::string inputStr = params->input; // Extract the input string from the parameters
-
-    DWORD exitCode = 0;
-
-    try {
-        // Jump into class logic
-        activeTester->operateHardware(inputStr);
-    } catch (const std::exception& e) {
-        std::cerr << "Thread error (" << activeTester->serialNumber << "): " << e.what() << std::endl;
-        exitCode = ERROR_SERVICE_SPECIFIC_ERROR; // Use a generic error code for exceptions
-    } catch (...) {
-        std::cerr << "Thread error (" << activeTester->serialNumber << "): Unknown error occurred." << std::endl;
-        exitCode = ERROR_PROCESS_ABORTED; // Use a generic error code for unknown exceptions
-    }
-
-    delete params; // Clean up dynamically allocated parameters
-    
-    return exitCode; // Return exit code to indicate success or type of failure
 }
