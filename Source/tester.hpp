@@ -9,7 +9,7 @@ struct testerList {
     std::vector<std::string> type;
 };
 
-// Find all connected PM240 and PM100 testers
+// Find all connected PM240 and PM125 testers
 testerList findTesters();
 
 class tester
@@ -35,6 +35,16 @@ public:
 
     // Get supported profiles from DUT
     std::string getProfiles() const;
+
+    // Object to store detected profile info
+    struct ProfileInfo {
+        bool isVariableVoltage = false; // False by default
+        std::string voltageRange;
+        std::string maxCurrent;
+    };
+
+    // Get profile info
+    ProfileInfo getProfileInfo(std::string profile) const;
     
     // Assign tester type
     void assignType(const std::string& typeStr);
@@ -42,11 +52,17 @@ public:
     // Return true if tester type is PM240
     bool isPM240() const;
 
-    // Return true if tester type is PM100
-    bool isPM100() const;
+    // Return true if tester type is PM125
+    bool isPM125() const;
+
+    // Set DUT profile
+    int setProfile(std::string profileNumStr) const;
+
+    // Set DUT variable voltage profile
+    int tester::setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const;
 
     // Lock tester and run core 
-    void operateHardware(std::string inputStr) const;
+    void testSinkVoltage(std::string inputStr) const;
 };
 
 // Run Passmark executable from cmd prompt and return info provided

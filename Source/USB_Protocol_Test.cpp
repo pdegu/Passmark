@@ -28,19 +28,19 @@ int main () {
                 std::string numProfilesStr = output.substr(pos + 13); // Extract number of profiles from output
                 numProfiles = std::stoi(numProfilesStr);
             }
-            if (numProfiles == 0) throw std::runtime_error("No DUT found for " + Tester.serialNumber); // Check if no profiles are found
+            if (numProfiles == 0) throw std::runtime_error("No DUT found."); // Check if no profiles are found
 
             // Ask user which profile(s) to test
             std::cout << "Select profile(s) to test or press enter to test all profiles:\t";
-            std::string input = "";
-            getline(std::cin, input);
+            std::string profileStr = "";
+            getline(std::cin, profileStr);
 
-            // Check if input is valid
-            if (input.empty()) {
+            // Check if profileStr is valid
+            if (profileStr.empty()) {
                 std::cout << "Testing all profiles..." << std::endl;
             } else {
                 std::string field;
-                std::stringstream ss(input);
+                std::stringstream ss(profileStr);
                 while (getline(ss,field,',')) {
                     if (!is_numeric(field)) throw std::runtime_error("Profile selection must be an integer!");
                     int profileNum = std::stoi(field);
@@ -49,13 +49,13 @@ int main () {
             }
 
             // Create thread in suspended state
-            HANDLE hThread = Bridge::start([&Tester]() {
-                Tester.operateHardware("...");
+            HANDLE hThread = Bridge::startSuspended([&Tester, &profileStr]() {
+                Tester.testSinkVoltage(profileStr); 
             });
 
             // Check that handle isn't NULL
             if (hThread != NULL) threadHandles.push_back(hThread);
-            else std::cerr << "Failed to create thread for tester " << Tester.serialNumber << ". Error: " << GetLastError() << std::endl;
+            else std::cerr << "Failed to create thread for tester. Error: " << GetLastError() << std::endl;
         }
 
         // Start threads once preparations are made

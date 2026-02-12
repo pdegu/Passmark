@@ -37,8 +37,8 @@ testerList findTesters() {
     // Poll PM240 testers
     poll("PM240");
 
-    //Poll PM100 testers
-    poll("PM100");
+    //Poll PM125 testers
+    poll("PM125");
 
     // Check if no testers were found
     if (list.testers.empty()) throw std::runtime_error("No testers found.");
@@ -86,20 +86,52 @@ bool tester::tryClaim(std::string sn) {
 }
 
 std::string tester::getProfiles() const {
-    std::string output = "";
-
-    if (!serialNumber.empty()) {
-        std::string commandArg = "-d " + this->serialNumber + " -p";
-        output = runCommand(*this, commandArg);
-        removeBlankLines(output);
-        std:: cout << output << std::endl;
+    std::string output = runCommand(*this, "-p");
+    if (output.empty()) {
+        std::string errorMsg = (this->serialNumber.empty()) ? "" : "(" + this->serialNumber + ") ";
+        throw std::runtime_error(errorMsg + "No response from tester.");
     }
+
+    removeBlankLines(output);
+    std:: cout << output << std::endl;
 
     return output;
 }
 
+tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
+    ProfileInfo info;
+    std::string searchStr = "INDEX:" + profile;
+    std::string output = this->getProfiles();
+    size_t foundPos = output.find(searchStr);
+    if (foundPos != std::string::npos) { // match for searchStr was found
+        size_t tPos1 = output.find("TYPE:", foundPos) + 5;
+        size_t tPos2 = output.find(",", foundPos);
+        std::string type = output.substr(tPos1, tPos2 - tPos1);
+
+         // Modify this string to add additional types
+         std::vector<std::string> VariableVoltageTypes{"PD-APDO", "PD-PPS", "QC3"};
+
+        // Set variable voltage flag if detected
+        for (std::string s : VariableVoltageTypes) {
+            if (type == s) info.isVariableVoltage = true;
+        }
+
+        // Populate voltage range
+        size_t vPos1 = output.find("V:") + 2;
+        size_t vPos2 = output.find("mV");
+        info.voltageRange = output.substr(vPos1, vPos2 - vPos1);
+
+        // Populate max current
+        size_t iPos1 = output.find("I:") + 2;
+        size_t iPos2 = output.find("mA");
+        info.maxCurrent = output.substr(iPos1, iPos2 - iPos1);
+    } else throw std::runtime_error("(" + this->serialNumber + ") Profile not found.");
+
+    return info;
+}
+
 void tester::assignType(const std::string& typeStr) {
-    type = (typeStr == "PM240" || typeStr == "PM100") ? typeStr : "none";
+    type = (typeStr == "PM240" || typeStr == "PM125") ? typeStr : "none";
 }
 
 bool tester::isPM240() const {
@@ -107,32 +139,67 @@ bool tester::isPM240() const {
     return (type == "PM240") ? true : false;
 }
 
-bool tester::isPM100() const {
+bool tester::isPM125() const {
     if (type.empty() || type == "none") throw std::runtime_error("Missing type assignment");
-    return (type == "PM100") ? true : false;
+    return (type == "PM125") ? true : false;
 }
 
-void tester::operateHardware(std::string inputStr) const {
+int tester::setProfile(std::string profileNumStr) const {
+    runCommand(*this, "-v " + profileNumStr); // Console command to set profile
+    std::string output = runCommand(*this, "-s"); // Console command to get status
+    size_t startPos = output.find("VOLTAGE:") + 8;
+    if (startPos != std::string::npos) { // Tester responded
+        size_t endPos = output.find("mV");
+        return std::stoi(output.substr(startPos, endPos - startPos));
+    } else throw std::runtime_error("(" + this->serialNumber + ") Tester failed to respond.");
+}
+
+int tester::setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const {
+    runCommand(*this, "-v " + profileNumStr + "," + std::to_string(sinkVoltage)); // Console command to set profile
+    std::string output = runCommand(*this, "-s"); // Console command to get status
+    size_t startPos = output.find("VOLTAGE:") + 8;
+    if (startPos != std::string::npos) { // Tester responded
+        size_t endPos = output.find("mV");
+        return std::stoi(output.substr(startPos, endPos - startPos));
+    } else throw std::runtime_error("(" + this->serialNumber + ") Tester failed to respond.");
+}
+
+void tester::testSinkVoltage(std::string profileStr) const {
     // Attempt to take mutex lock for tester
     DWORD waitResult = WaitForSingleObject(this->hMutex, 5000); // Wait for 5 seconds to acquire lock before timing out and throwing error
 
-    auto toConsole = [&](std::string message) {
+    auto toConsole = [this](std::string message) {
         std::cout << "(" << this->serialNumber << ")\t" << message << std::endl;
     };
 
-    if (waitResult == WAIT_OBJECT_0) {
-        // Worker thread has acquired the lock and can safely run tests
+    if (waitResult == WAIT_OBJECT_0) { // Worker thread has acquired the lock and can safely run tests
         std::cout << "DEBUG: Lock acquired for " << serialNumber << std::endl;
 
-        // Insert member function here
-        toConsole("Parkour!");
+        /**
+         * Main logic for USB protocol test is implemented here.
+         * (1) Check if profileStr is empty. If its not empty, only test profiles specified. Assume that profiles were already checked to be valid.
+         * (2) Iterate through each profile.
+         * (3) Check if profile is a variable voltage profile.
+         */
+
+        auto runCurrentSweep = [this](std::string profile) {
+            ProfileInfo info = getProfileInfo(profile);
+        };
+
+        if (!profileStr.empty()) { // One or more profiles were specified
+            std::stringstream ss(profileStr);
+            std::string field;
+            while (getline(ss, field, ',')) {
+                runCurrentSweep(field);
+            }
+        }
 
         ReleaseMutex(this->hMutex); // Release lock after testing is done
     } else {
         std::cout << "Tell me why!!!" << std::endl;
         // FAILURE: Throw an error that the wrapper will catch
         if (waitResult == WAIT_TIMEOUT) {
-            throw std::runtime_error("Mutex timeout: Device is busy or stuck.");
+            throw std::runtime_error("Mutex timeout: Tester is busy or stuck.");
         } else if (waitResult == WAIT_ABANDONED) {
             throw std::runtime_error("Mutex abandoned: Previous owner crashed.");
         } else {
@@ -146,7 +213,11 @@ void tester::operateHardware(std::string inputStr) const {
 // ----------------------------------------
 
 std::string runCommand(const tester& Tester, const std::string& commandArg) {
-    std::string commandBase = (Tester.isPM240()) ? "USBPDPROConsole.exe " : (Tester.isPM100()) ? "USBPDConsole.exe " : "Invalid tester type";
+    std::string commandBase = (Tester.isPM240()) ? "USBPDPROConsole.exe " : (Tester.isPM125()) ? "USBPDConsole.exe " : "Invalid tester type";
+    if (commandBase == "Invalid tester type") throw std::runtime_error(commandBase);
+    
+    // Append serial number to commandBase if not empty, i.e., if Tester object represents a real tester
+    if (!Tester.serialNumber.empty()) commandBase.append("-d " + Tester.serialNumber + " ");
     std::string command = commandBase + commandArg;
     
     HANDLE hRead, hWrite;

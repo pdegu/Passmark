@@ -39,7 +39,7 @@ namespace Bridge {
      * Use this to run any member function or logic in a background thread.
      */
     template<typename Callable>
-    HANDLE start(Callable&& task) {
+    HANDLE startSuspended(Callable&& task) {
         // Create "box" on heap to ensure it survives thread start
         auto* taskPtr = new std::function<void()>(std::forward<Callable>(task));
 
