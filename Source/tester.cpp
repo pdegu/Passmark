@@ -73,16 +73,20 @@ bool tester::tryClaim(std::string sn) {
 
     if (hMutex == NULL) return false; // OS failed to try to open mutex (rare)
 
-    // Check if mutex is already claimed
-    if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        CloseHandle(hMutex); // Decrement calls to mutex
-        hMutex = NULL;
-        return false;
-    }
+   // Move the Wait logic here. Using 0ms timeout for an immediate check.
+    DWORD waitResult = WaitForSingleObject(hMutex, 0);
 
-    // Mutex claim is successful
-    this->serialNumber = sn;
-    return true;
+    if (waitResult == WAIT_OBJECT_0 || waitResult == WAIT_ABANDONED) {
+        // We successfully took ownership of the lock (Fresh or Abandoned)
+        std::cout << "DEBUG: Lock acquired for " << sn << std::endl;
+        this->serialNumber = sn;
+        return true;
+    } 
+
+    // If we get here, someone else owns it (WAIT_TIMEOUT)
+    CloseHandle(hMutex);
+    hMutex = NULL;
+    return false;
 }
 
 std::string tester::getProfiles(bool toConsole) const {
@@ -192,81 +196,62 @@ tester::status tester::setLoad(std::string loadCurrent) const {
 }
 
 void tester::testSinkVoltage(std::string profileStr) const {
-    // Attempt to take mutex lock for tester
-    DWORD waitResult = WaitForSingleObject(this->hMutex, 5000); // Wait for 5 seconds to acquire lock before timing out and throwing error
+    /**
+     * Main logic for USB protocol test is implemented here.
+     * (1) Check if profileStr is empty. If its not empty, only test profiles specified. Assume that profiles were already checked to be valid.
+     * (2) Iterate through each profile.
+     * (3) Check if profile is a variable voltage profile. If true, set up loop to iterate through voltage range
+     */
 
-    if (waitResult == WAIT_OBJECT_0) { // Worker thread has acquired the lock and can safely run tests
-        std::cout << "DEBUG: Lock acquired for " << serialNumber << std::endl;
-
-        /**
-         * Main logic for USB protocol test is implemented here.
-         * (1) Check if profileStr is empty. If its not empty, only test profiles specified. Assume that profiles were already checked to be valid.
-         * (2) Iterate through each profile.
-         * (3) Check if profile is a variable voltage profile. If true, set up loop to iterate through voltage range
-         */
-
-        auto runCurrentSweep = [this](std::string profile) {
-            auto CurrentSweep = [this](std::string maxCurrent) {
-                int c = 0;
-                int currentStep = 50; // Current step in mA
-                while (c < std::stoi(maxCurrent)) {
-                    status Stats = this->setLoad(std::to_string(c));
-                    std::cout << Stats.sinkVoltage << ", " << Stats.sinkMeasCurrent << std::endl;
-                }
-            };
-
-            ProfileInfo info = getProfileInfo(profile);
-            if (info.isVariableVoltage) {
-                size_t pos = info.voltageRange.find("-");
-                if (pos != std::string::npos) {
-                    std::cout << info.voltageRange.substr(0,pos) << std::endl;
-                    int vMin = std::stoi(info.voltageRange.substr(0,pos));
-                    std::cout << "Check 1" << std::endl;
-                    int vMax = std::stoi(info.voltageRange.substr(pos + 1));
-                    std::cout << "Check 2" << std::endl;
-                    int vStep = 1000; // Voltage step in mV for variable voltage profiles
-
-                    for (int v = vMin; v < vMax; v += vStep - v % vStep) {
-                        status Stats = this->setVariableVoltageProfile(profile, v);
-                        std::cout << "Check 3" << std::endl;
-
-                        // Check that profile was set successfully
-                        int setVoltage = std::stoi(Stats.sinkVoltage);
-                        if (setVoltage > v * 0.95 && setVoltage < v * 1.05) {
-                            CurrentSweep(info.maxCurrent);
-                        }
-                    }
-                }
-            } else {
-                status Stats = this->setProfile(profile);
-
-                // Check that profile was set successfully
-                int setVoltage = std::stoi(Stats.sinkVoltage);
-                int targetVoltage = std::stoi(info.voltageRange);
-                if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
-                    CurrentSweep(info.maxCurrent);
-                }
+    auto runCurrentSweep = [this](std::string profile) {
+        auto CurrentSweep = [this](std::string maxCurrent) {
+            int c = 0;
+            int currentStep = 50; // Current step in mA
+            while (c < std::stoi(maxCurrent)) {
+                status Stats = this->setLoad(std::to_string(c));
+                std::cout << Stats.sinkVoltage << ", " << Stats.sinkMeasCurrent << std::endl;
             }
         };
 
-        if (!profileStr.empty()) { // One or more profiles were specified
-            std::stringstream ss(profileStr);
-            std::string field;
-            while (getline(ss, field, ',')) {
-                runCurrentSweep(field);
+        ProfileInfo info = getProfileInfo(profile);
+        if (info.isVariableVoltage) {
+            size_t pos = info.voltageRange.find("-");
+            if (pos != std::string::npos) {
+                std::cout << info.voltageRange.substr(0,pos) << std::endl;
+                int vMin = std::stoi(info.voltageRange.substr(0,pos));
+                std::cout << "Check 1" << std::endl;
+                int vMax = std::stoi(info.voltageRange.substr(pos + 1));
+                std::cout << "Check 2" << std::endl;
+                int vStep = 1000; // Voltage step in mV for variable voltage profiles
+
+                for (int v = vMin; v < vMax; v += vStep - v % vStep) {
+                    status Stats = this->setVariableVoltageProfile(profile, v);
+                    std::cout << "Check 3" << std::endl;
+
+                    // Check that profile was set successfully
+                    int setVoltage = std::stoi(Stats.sinkVoltage);
+                    if (setVoltage > v * 0.95 && setVoltage < v * 1.05) {
+                        CurrentSweep(info.maxCurrent);
+                    }
+                }
+            }
+        } else {
+            status Stats = this->setProfile(profile);
+
+            // Check that profile was set successfully
+            int setVoltage = std::stoi(Stats.sinkVoltage);
+            int targetVoltage = std::stoi(info.voltageRange);
+            if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
+                CurrentSweep(info.maxCurrent);
             }
         }
+    };
 
-        ReleaseMutex(this->hMutex); // Release lock after testing is done
-    } else {
-        std::cout << "Tell me why!!!" << std::endl;
-        // FAILURE: Throw an error that the wrapper will catch
-        if (waitResult == WAIT_TIMEOUT) {
-            throw std::runtime_error("Mutex timeout: Tester is busy or stuck.");
-        } else if (waitResult == WAIT_ABANDONED) {
-            throw std::runtime_error("Mutex abandoned: Previous owner crashed.");
-        } else {
-            throw std::runtime_error("Mutex failed with system error: " + std::to_string(GetLastError()));
+    if (!profileStr.empty()) { // One or more profiles were specified
+        std::stringstream ss(profileStr);
+        std::string field;
+        while (getline(ss, field, ',')) {
+            runCurrentSweep(field);
         }
     }
 }
