@@ -73,7 +73,7 @@ public:
     status setLoad(std::string maxCurrent) const;
 
     // Lock tester and run core 
-    void testSinkVoltage(std::string inputStr) const;
+    void testSinkVoltage(std::string profileStr) const;
 };
 
 // Run Passmark executable from cmd prompt and return info provided

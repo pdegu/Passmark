@@ -15,6 +15,8 @@ bool is_numeric(std::string numStr) {
     return true;
 }
 
+bool is_double(std::string numStr) {}
+
 std::vector<tester> getTesters() {
     // Find available Passmark testers
     testerList list = findTesters();

@@ -1,0 +1,1 @@
+g++ -std=c++11 batstress.cpp Passmark.cpp tester.cpp -o ../batstress.exe

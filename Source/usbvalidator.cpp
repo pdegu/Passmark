@@ -68,17 +68,13 @@ int main () {
             (DWORD)threadHandles.size(),
             threadHandles.data(),
             TRUE,
-            6e7 // 1hr time limit
+            3.6e6 // 1hr time limit
         );
 
-        if (waitResult == WAIT_TIMEOUT || waitResult == WAIT_FAILED) {
-            // One of the testers hung or failed
-        }
+        if (waitResult == WAIT_TIMEOUT || waitResult == WAIT_FAILED) throw std::runtime_error("One or more threads failed.");
 
         // Close handles
-        for (HANDLE h : threadHandles) {
-            CloseHandle(h);
-        }
+        for (HANDLE h : threadHandles) CloseHandle(h);
         threadHandles.clear();
     } catch (const std::runtime_error&e) {
         std::cout << "Error: " << e.what() << std::endl;

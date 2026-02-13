@@ -109,8 +109,12 @@ tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
     size_t foundPos = output.find(searchStr);
     if (foundPos != std::string::npos) { // match for searchStr was found
         size_t tPos1 = output.find("TYPE:", foundPos) + 5;
-        size_t tPos2 = output.find(",", foundPos);
-        std::string type = output.substr(tPos1, tPos2 - tPos1);
+        std::string type = "";
+        size_t p = tPos1;
+        while (output[p] != ',') {
+            type.push_back(output[p]);
+            if (p < output.size()) p += 1;
+        }
 
          // Modify this string to add additional types
          std::vector<std::string> VariableVoltageTypes{"PD-APDO", "PD-PPS", "QC3"};
@@ -218,7 +222,6 @@ void tester::testSinkVoltage(std::string profileStr) const {
         if (info.isVariableVoltage) {
             size_t pos = info.voltageRange.find("-");
             if (pos != std::string::npos) {
-                std::cout << info.voltageRange.substr(0,pos) << std::endl;
                 int vMin = std::stoi(info.voltageRange.substr(0,pos));
                 int vMax = std::stoi(info.voltageRange.substr(pos + 1));
                 int vStep = 1000; // Voltage step in mV for variable voltage profiles

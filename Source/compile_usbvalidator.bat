@@ -1,0 +1,1 @@
+g++ -std=c++11 usbvalidator.cpp Passmark.cpp tester.cpp -o ../usbvalidator.exe
