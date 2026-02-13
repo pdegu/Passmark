@@ -85,7 +85,7 @@ bool tester::tryClaim(std::string sn) {
     return true;
 }
 
-std::string tester::getProfiles() const {
+std::string tester::getProfiles(bool toConsole) const {
     std::string output = runCommand(*this, "-p");
     if (output.empty()) {
         std::string errorMsg = (this->serialNumber.empty()) ? "" : "(" + this->serialNumber + ") ";
@@ -93,7 +93,7 @@ std::string tester::getProfiles() const {
     }
 
     removeBlankLines(output);
-    std:: cout << output << std::endl;
+    if (toConsole) std:: cout << output << std::endl;
 
     return output;
 }
@@ -101,7 +101,7 @@ std::string tester::getProfiles() const {
 tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
     ProfileInfo info;
     std::string searchStr = "INDEX:" + profile;
-    std::string output = this->getProfiles();
+    std::string output = this->getProfiles(false);
     size_t foundPos = output.find(searchStr);
     if (foundPos != std::string::npos) { // match for searchStr was found
         size_t tPos1 = output.find("TYPE:", foundPos) + 5;
@@ -144,33 +144,56 @@ bool tester::isPM125() const {
     return (type == "PM125") ? true : false;
 }
 
-int tester::setProfile(std::string profileNumStr) const {
-    runCommand(*this, "-v " + profileNumStr); // Console command to set profile
-    std::string output = runCommand(*this, "-s"); // Console command to get status
-    size_t startPos = output.find("VOLTAGE:") + 8;
-    if (startPos != std::string::npos) { // Tester responded
-        size_t endPos = output.find("mV");
-        return std::stoi(output.substr(startPos, endPos - startPos));
-    } else throw std::runtime_error("(" + this->serialNumber + ") Tester failed to respond.");
+tester::status tester::getStatus() const {
+    std::string output = runCommand(*this, "-s");
+    removeBlankLines(output);
+
+    status Stats;
+
+    auto getReturnStr = [this](std::string inputStr) {
+        size_t startPos = inputStr.find(inputStr) + inputStr.size() - 1;
+        if (startPos != std::string::npos) { // Tester responded
+            size_t p = startPos;
+            std::string ReturnStr = "";
+            while (isdigit(inputStr[p])) {
+                ReturnStr.push_back(inputStr[p]);
+                if (p < inputStr.size()) p += 1;
+                else break;
+            }
+            return ReturnStr;
+        } else throw std::runtime_error("(" + this->serialNumber + ") Tester failed to respond.");
+    };
+
+    Stats.sinkVoltage = getReturnStr("SINK VOLTAGE:");
+    Stats.sinkSetCurrent = getReturnStr("SINK SET CURRENT:");
+    Stats.sinkMeasCurrent = getReturnStr("SINK MEASURED CURRENT:");
+    return Stats;
 }
 
-int tester::setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const {
+tester::status tester::setProfile(std::string profileNumStr) const {
+    runCommand(*this, "-v " + profileNumStr); // Console command to set profile
+    Sleep(3000); // Allow time for voltage to settle
+    return getStatus();
+}
+
+tester::status tester::setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const {
     runCommand(*this, "-v " + profileNumStr + "," + std::to_string(sinkVoltage)); // Console command to set profile
-    std::string output = runCommand(*this, "-s"); // Console command to get status
-    size_t startPos = output.find("VOLTAGE:") + 8;
-    if (startPos != std::string::npos) { // Tester responded
-        size_t endPos = output.find("mV");
-        return std::stoi(output.substr(startPos, endPos - startPos));
-    } else throw std::runtime_error("(" + this->serialNumber + ") Tester failed to respond.");
+    Sleep(3000); // Allow time for voltage to settle
+    return getStatus();
+}
+
+tester::status tester::setLoad(std::string loadCurrent) const {
+    // Send set load command to tester
+    if (this->isPM125()) runCommand(*this, "-l " + loadCurrent);
+    if (this->isPM240()) runCommand(*this, "-l " + loadCurrent + ",200");
+ 
+    Sleep(500); // Allow time for current to settle
+    return getStatus();
 }
 
 void tester::testSinkVoltage(std::string profileStr) const {
     // Attempt to take mutex lock for tester
     DWORD waitResult = WaitForSingleObject(this->hMutex, 5000); // Wait for 5 seconds to acquire lock before timing out and throwing error
-
-    auto toConsole = [this](std::string message) {
-        std::cout << "(" << this->serialNumber << ")\t" << message << std::endl;
-    };
 
     if (waitResult == WAIT_OBJECT_0) { // Worker thread has acquired the lock and can safely run tests
         std::cout << "DEBUG: Lock acquired for " << serialNumber << std::endl;
@@ -179,11 +202,51 @@ void tester::testSinkVoltage(std::string profileStr) const {
          * Main logic for USB protocol test is implemented here.
          * (1) Check if profileStr is empty. If its not empty, only test profiles specified. Assume that profiles were already checked to be valid.
          * (2) Iterate through each profile.
-         * (3) Check if profile is a variable voltage profile.
+         * (3) Check if profile is a variable voltage profile. If true, set up loop to iterate through voltage range
          */
 
         auto runCurrentSweep = [this](std::string profile) {
+            auto CurrentSweep = [this](std::string maxCurrent) {
+                int c = 0;
+                int currentStep = 50; // Current step in mA
+                while (c < std::stoi(maxCurrent)) {
+                    status Stats = this->setLoad(std::to_string(c));
+                    std::cout << Stats.sinkVoltage << ", " << Stats.sinkMeasCurrent << std::endl;
+                }
+            };
+
             ProfileInfo info = getProfileInfo(profile);
+            if (info.isVariableVoltage) {
+                size_t pos = info.voltageRange.find("-");
+                if (pos != std::string::npos) {
+                    std::cout << info.voltageRange.substr(0,pos) << std::endl;
+                    int vMin = std::stoi(info.voltageRange.substr(0,pos));
+                    std::cout << "Check 1" << std::endl;
+                    int vMax = std::stoi(info.voltageRange.substr(pos + 1));
+                    std::cout << "Check 2" << std::endl;
+                    int vStep = 1000; // Voltage step in mV for variable voltage profiles
+
+                    for (int v = vMin; v < vMax; v += vStep - v % vStep) {
+                        status Stats = this->setVariableVoltageProfile(profile, v);
+                        std::cout << "Check 3" << std::endl;
+
+                        // Check that profile was set successfully
+                        int setVoltage = std::stoi(Stats.sinkVoltage);
+                        if (setVoltage > v * 0.95 && setVoltage < v * 1.05) {
+                            CurrentSweep(info.maxCurrent);
+                        }
+                    }
+                }
+            } else {
+                status Stats = this->setProfile(profile);
+
+                // Check that profile was set successfully
+                int setVoltage = std::stoi(Stats.sinkVoltage);
+                int targetVoltage = std::stoi(info.voltageRange);
+                if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
+                    CurrentSweep(info.maxCurrent);
+                }
+            }
         };
 
         if (!profileStr.empty()) { // One or more profiles were specified

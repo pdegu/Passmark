@@ -34,7 +34,7 @@ public:
     bool tryClaim(std::string sn);
 
     // Get supported profiles from DUT
-    std::string getProfiles() const;
+    std::string getProfiles(bool toConsole) const;
 
     // Object to store detected profile info
     struct ProfileInfo {
@@ -55,11 +55,22 @@ public:
     // Return true if tester type is PM125
     bool isPM125() const;
 
+    struct status {
+        std::string sinkVoltage;
+        std::string sinkSetCurrent;
+        std::string sinkMeasCurrent;
+    };
+    
+    status getStatus() const;
+
     // Set DUT profile
-    int setProfile(std::string profileNumStr) const;
+    status setProfile(std::string profileNumStr) const;
 
     // Set DUT variable voltage profile
-    int tester::setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const;
+    status setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const;
+
+    // Set load current
+    status setLoad(std::string maxCurrent) const;
 
     // Lock tester and run core 
     void testSinkVoltage(std::string inputStr) const;

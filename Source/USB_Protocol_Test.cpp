@@ -21,7 +21,7 @@ int main () {
         std::vector<HANDLE> threadHandles;
         for (auto& Tester : validTesters) {
             std::cout << "\nTester: " << Tester.serialNumber << "\n--------------------------" << std::endl; 
-            std::string output = Tester.getProfiles(); // Discover supported profiles for DUT
+            std::string output = Tester.getProfiles(true); // Discover supported profiles for DUT
             size_t pos = output.find("NUM PROFILES:");
             int numProfiles;
             if (pos != std::string::npos) {
