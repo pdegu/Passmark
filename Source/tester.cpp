@@ -102,7 +102,7 @@ std::string tester::getProfiles(bool toConsole) const {
     return output;
 }
 
-tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
+tester::ProfileInfo tester::getProfileInfo(std::string profile) const { std::cout << "getProfileInfo()" << std::endl;
     ProfileInfo info;
     std::string searchStr = "INDEX:" + profile;
     std::string output = this->getProfiles(false);
@@ -121,13 +121,13 @@ tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
         }
 
         // Populate voltage range
-        size_t vPos1 = output.find("V:") + 2;
-        size_t vPos2 = output.find("mV");
+        size_t vPos1 = output.find("V:", foundPos) + 2;
+        size_t vPos2 = output.find("mV", foundPos);
         info.voltageRange = output.substr(vPos1, vPos2 - vPos1);
 
         // Populate max current
-        size_t iPos1 = output.find("I:") + 2;
-        size_t iPos2 = output.find("mA");
+        size_t iPos1 = output.find("I:", foundPos) + 2;
+        size_t iPos2 = output.find("mA", foundPos);
         info.maxCurrent = output.substr(iPos1, iPos2 - iPos1);
     } else throw std::runtime_error("(" + this->serialNumber + ") Profile not found.");
 
@@ -148,14 +148,14 @@ bool tester::isPM125() const {
     return (type == "PM125") ? true : false;
 }
 
-tester::status tester::getStatus() const {
+tester::status tester::getStatus() const { std::cout << "getStatus()" << std::endl;
     std::string output = runCommand(*this, "-s");
     removeBlankLines(output);
 
     status Stats;
 
-    auto getReturnStr = [this](std::string inputStr) {
-        size_t startPos = inputStr.find(inputStr) + inputStr.size() - 1;
+    auto getReturnStr = [this, &output](std::string inputStr) {
+        size_t startPos = output.find(inputStr) + inputStr.size() - 1;
         if (startPos != std::string::npos) { // Tester responded
             size_t p = startPos;
             std::string ReturnStr = "";
@@ -213,20 +213,18 @@ void tester::testSinkVoltage(std::string profileStr) const {
             }
         };
 
+        std::cout << "Marco!" << std::endl; 
         ProfileInfo info = getProfileInfo(profile);
         if (info.isVariableVoltage) {
             size_t pos = info.voltageRange.find("-");
             if (pos != std::string::npos) {
                 std::cout << info.voltageRange.substr(0,pos) << std::endl;
                 int vMin = std::stoi(info.voltageRange.substr(0,pos));
-                std::cout << "Check 1" << std::endl;
                 int vMax = std::stoi(info.voltageRange.substr(pos + 1));
-                std::cout << "Check 2" << std::endl;
                 int vStep = 1000; // Voltage step in mV for variable voltage profiles
 
                 for (int v = vMin; v < vMax; v += vStep - v % vStep) {
                     status Stats = this->setVariableVoltageProfile(profile, v);
-                    std::cout << "Check 3" << std::endl;
 
                     // Check that profile was set successfully
                     int setVoltage = std::stoi(Stats.sinkVoltage);
@@ -236,9 +234,11 @@ void tester::testSinkVoltage(std::string profileStr) const {
                 }
             }
         } else {
+            std::cout << "Polo!" << std::endl;
             status Stats = this->setProfile(profile);
 
             // Check that profile was set successfully
+            std::cout << Stats.sinkVoltage << ", " << Stats.sinkMeasCurrent << std::endl;
             int setVoltage = std::stoi(Stats.sinkVoltage);
             int targetVoltage = std::stoi(info.voltageRange);
             if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
