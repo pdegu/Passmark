@@ -102,7 +102,7 @@ std::string tester::getProfiles(bool toConsole) const {
     return output;
 }
 
-tester::ProfileInfo tester::getProfileInfo(std::string profile) const { std::cout << "getProfileInfo()" << std::endl;
+tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
     ProfileInfo info;
     std::string searchStr = "INDEX:" + profile;
     std::string output = this->getProfiles(false);
@@ -148,20 +148,20 @@ bool tester::isPM125() const {
     return (type == "PM125") ? true : false;
 }
 
-tester::status tester::getStatus() const { std::cout << "getStatus()" << std::endl;
+tester::status tester::getStatus() const {
     std::string output = runCommand(*this, "-s");
     removeBlankLines(output);
 
     status Stats;
 
     auto getReturnStr = [this, &output](std::string inputStr) {
-        size_t startPos = output.find(inputStr) + inputStr.size() - 1;
+        size_t startPos = output.find(inputStr) + inputStr.size();
         if (startPos != std::string::npos) { // Tester responded
             size_t p = startPos;
             std::string ReturnStr = "";
-            while (isdigit(inputStr[p])) {
-                ReturnStr.push_back(inputStr[p]);
-                if (p < inputStr.size()) p += 1;
+            while (isdigit(output[p])) {
+                ReturnStr.push_back(output[p]);
+                if (p < output.size()) p += 1;
                 else break;
             }
             return ReturnStr;
@@ -207,13 +207,13 @@ void tester::testSinkVoltage(std::string profileStr) const {
         auto CurrentSweep = [this](std::string maxCurrent) {
             int c = 0;
             int currentStep = 50; // Current step in mA
-            while (c < std::stoi(maxCurrent)) {
+            while (c <= std::stoi(maxCurrent)) {
                 status Stats = this->setLoad(std::to_string(c));
-                std::cout << Stats.sinkVoltage << ", " << Stats.sinkMeasCurrent << std::endl;
+                c += currentStep;
             }
+            this->setLoad("0");
         };
 
-        std::cout << "Marco!" << std::endl; 
         ProfileInfo info = getProfileInfo(profile);
         if (info.isVariableVoltage) {
             size_t pos = info.voltageRange.find("-");
@@ -234,11 +234,9 @@ void tester::testSinkVoltage(std::string profileStr) const {
                 }
             }
         } else {
-            std::cout << "Polo!" << std::endl;
             status Stats = this->setProfile(profile);
 
             // Check that profile was set successfully
-            std::cout << Stats.sinkVoltage << ", " << Stats.sinkMeasCurrent << std::endl;
             int setVoltage = std::stoi(Stats.sinkVoltage);
             int targetVoltage = std::stoi(info.voltageRange);
             if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
