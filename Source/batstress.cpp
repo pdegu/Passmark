@@ -1,3 +1,5 @@
+#define _WIN32_WINNT 0x0600
+
 #include "Passmark.hpp"
 
 #include <vector>
@@ -53,15 +55,51 @@ int main() {
             auto batstress = [&Tester, &duration](std::string profileStr) {
                 tester::ProfileInfo info = Tester.getProfileInfo(profileStr);
                 tester::status Stats;
+                int testVoltage;
                 if (info.isVariableVoltage) {
                     // Set to max voltage
                     size_t pos = info.voltageRange.find("-");
                     if (pos != std::string::npos) {
-                        int testVoltage = std::stoi(info.voltageRange.substr(pos + 1));
+                        testVoltage = std::stoi(info.voltageRange.substr(pos + 1));
                         Stats = Tester.setVariableVoltageProfile(profileStr, testVoltage);
                     }
                 } else {
+                    testVoltage = std::stoi(info.voltageRange);
                     Stats = Tester.setProfile(profileStr);
+                }
+
+                // Check that voltage is set
+                int voltage = std::stoi(Stats.sinkVoltage);
+                if (voltage < testVoltage * 0.95 && voltage > testVoltage * 1.05) {
+                    throw std::runtime_error("(" + Tester.serialNumber + ") Unable to set voltage.");
+                }
+
+                auto startTime = std::chrono::steady_clock::now();
+                auto limitMinutes = std::chrono::minutes(std::stoi(duration));
+                while (true) {
+                    // Print stats to console
+                    Stats = Tester.getStatus();
+                    printf("sinkVoltage = %smV, sinkMeasCurrent = %smA\n", Stats.sinkVoltage.c_str(), Stats.sinkMeasCurrent.c_str());
+                    
+                    // Check remaining time
+                    auto timeNow = std::chrono::steady_clock::now();
+                    auto timeElapsed = std::chrono::duration_cast<std::chrono::seconds>(timeNow - startTime);
+                    if (timeElapsed > limitMinutes) {
+                        std::cout << "Time limit reached. Terminating test..." << std::endl; 
+                        break;
+                    } else {
+                        auto timeRemaining = std::chrono::duration_cast<std::chrono::seconds>(limitMinutes) - timeElapsed;
+                        auto hours = std::chrono::duration_cast<std::chrono::hours>(timeRemaining);
+                        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(timeRemaining % std::chrono::hours(1));
+                        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeRemaining % std::chrono::minutes(1));
+
+                        // Format output as h:mm:ss
+                        // %u for unsigned int, %02u to ensure 2 digits with a leading zero
+                        printf("Time remaining: %i:%02i:%02i\n", hours.count(), minutes.count(), seconds.count());
+                    }
+
+                    int checkInterval = 30 * 1000;
+                    Sleep(checkInterval);
                 }
             };
 

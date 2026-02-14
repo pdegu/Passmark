@@ -233,7 +233,7 @@ void tester::testSinkVoltage(std::string profileStr) const {
                     int setVoltage = std::stoi(Stats.sinkVoltage);
                     if (setVoltage > v * 0.95 && setVoltage < v * 1.05) {
                         CurrentSweep(info.maxCurrent);
-                    }
+                    } else printf("(%s) Unable to set voltage to %imV\n", this->serialNumber, v); // <<< MODIFY THIS LINE ONCE PROFILE RETURN FUNCTION EXISTSS
                 }
             }
         } else {
@@ -244,7 +244,7 @@ void tester::testSinkVoltage(std::string profileStr) const {
             int targetVoltage = std::stoi(info.voltageRange);
             if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
                 CurrentSweep(info.maxCurrent);
-            }
+            } else printf("(%s) Unable to set voltage to %imV\n", this->serialNumber, targetVoltage);
         }
     };
 
