@@ -70,7 +70,7 @@ public:
     status setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const;
 
     // Set load current
-    status setLoad(std::string maxCurrent) const;
+    status setLoad(std::string maxCurrent, const std::string& loadSpeed = "200") const;
 
     // Lock tester and run core 
     void testSinkVoltage(std::string profileStr) const;

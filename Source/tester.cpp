@@ -117,7 +117,7 @@ tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
         }
 
          // Modify this string to add additional types
-         std::vector<std::string> VariableVoltageTypes{"PD-APDO", "PD-PPS", "QC3"};
+         std::vector<std::string> VariableVoltageTypes{"PD-APDO", "PD-PPS", "QC2", "QC3"};
 
         // Set variable voltage flag if detected
         for (std::string s : VariableVoltageTypes) {
@@ -190,10 +190,10 @@ tester::status tester::setVariableVoltageProfile(std::string profileNumStr, int 
     return getStatus();
 }
 
-tester::status tester::setLoad(std::string loadCurrent) const {
+tester::status tester::setLoad(std::string loadCurrent, const std::string& loadSpeed) const {
     // Send set load command to tester
     if (this->isPM125()) runCommand(*this, "-l " + loadCurrent);
-    if (this->isPM240()) runCommand(*this, "-l " + loadCurrent + ",200");
+    if (this->isPM240()) runCommand(*this, "-l " + loadCurrent + "," + loadSpeed);
  
     Sleep(500); // Allow time for current to settle
     return getStatus();

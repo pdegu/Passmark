@@ -15,7 +15,19 @@ bool is_numeric(std::string numStr) {
     return true;
 }
 
-bool is_double(std::string numStr) {}
+std::string getNumStr(const std::string& inputStr, const size_t& startPos) {
+    std::string NumStr = "";
+
+    size_t p = startPos;
+    while (p < inputStr.size()) {
+        if (isdigit(inputStr[p])) {
+            NumStr.push_back(inputStr[p]);
+            ++p;
+        } else break;
+    }
+
+    return NumStr;
+}
 
 std::vector<tester> getTesters() {
     // Find available Passmark testers
@@ -44,4 +56,20 @@ std::vector<tester> getTesters() {
     }
 
     return validTesters;
+}
+
+BOOL WINAPI CtrlHandler(DWORD ctrlType) {
+    
+    switch (ctrlType)
+    {
+        case CTRL_C_EVENT:
+        case CTRL_BREAK_EVENT:
+        case CTRL_CLOSE_EVENT:
+            g_abortRequested.store(true, std::memory_order_relaxed);
+            // Do NOT throw here, just set the flag
+            return TRUE;
+
+        default:
+            return FALSE;
+    }
 }

@@ -9,10 +9,11 @@
 #include <string>
 #include <sstream>
 #include <chrono>
+#include <atomic>
 
 // Determine max output from available profiles
 std::string getMax(const tester& Tester) {
-    std::string indexStr; // return value
+    std::string indexStr = ""; // return value
 
     std::string output = Tester.getProfiles(false);
     removeBlankLines(output); 
@@ -21,15 +22,32 @@ std::string getMax(const tester& Tester) {
     std::string line;
     int vLast = 5000, iLast = 500, vNow, iNow;
     while (getline(ss, line)) {
-        size_t pos1 = line.find("V:") + 2;
-        vNow = (pos1 != std::string::npos) ? std::stoi(line.substr(pos1, line.find("mV") - pos1)) : 0;
+        std::string searchStr = "INDEX:";
+        size_t pos1 = line.find(searchStr);
 
-        size_t pos2 = line.find("I:") + 2;
-        iNow = (pos2 != std::string::npos) ? std::stoi(line.substr(pos2, line.find("mA") - pos2)) : 0;
+        if (pos1 != std::string::npos) {
+            std::string temp = line.substr(pos1 + searchStr.size(), 1);
+            searchStr = "V:";
+            size_t pos2 = line.find(searchStr);
+            tester::ProfileInfo info = Tester.getProfileInfo(temp);
 
-        size_t pos3 = line.find("INDEX:") + 6;
-        std::string temp = (pos3 != std::string::npos) ? line.substr(pos3, 1) : "";
-        indexStr = (vNow > vLast) ?  temp : (iNow > iLast) ? temp : "";
+            if (info.isVariableVoltage) {
+                searchStr = "-";
+                pos2 = (pos2 != std::string::npos) ? line.find(searchStr, pos2) : std::string::npos;
+            }
+            vNow = (pos2 != std::string::npos) ? std::stoi(getNumStr(line, pos2 + searchStr.size())) : 0;
+
+            searchStr = "I:";
+            size_t pos3 = line.find(searchStr);
+            iNow = (pos3 != std::string::npos) ? std::stoi(getNumStr(line, pos3 + searchStr.size())) : 0;
+
+            indexStr = (vNow > vLast) ?  temp : (iNow > iLast) ? temp : indexStr;
+
+            if (indexStr == temp) {
+                vLast = vNow;
+                iLast = iNow;
+            }
+        }
     }
 
     return indexStr;
@@ -41,12 +59,12 @@ std::string getMax(const tester& Tester) {
  * (2) Define time limit and begin test
  * (3) While test is running, check if voltage has dropped
  */
-void StressTest(const tester& Tester, const std::string& profileStr, const std::string& duration) {
+void StressTest(const tester& Tester, const std::string& profileStr, const std::string& duration) { std::cout << "Pit stop!" << std::endl;
     
-    tester::status Stats;
-    auto magic = [&Tester, &profileStr, &Stats]() {
+    auto magic = [&Tester, &profileStr]() {
         int setVoltage; // return value
         tester::ProfileInfo info = Tester.getProfileInfo(profileStr);
+        tester::status Stats;
         
         // Determine profile type
         if (info.isVariableVoltage) {
@@ -61,21 +79,26 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
             Stats = Tester.setProfile(profileStr);
         }
 
-        return setVoltage;
+        return std::vector<int>{setVoltage,std::stoi(Stats.sinkVoltage),std::stoi(info.maxCurrent)};
     };
 
-    int testVoltage = magic();
+    std::vector<int> initialState = magic();
 
     // Check that voltage is set
-    int voltage = std::stoi(Stats.sinkVoltage);
-    if (voltage < testVoltage * 0.95 && voltage > testVoltage * 1.05) {
+    int Vt = initialState[0] /* Target voltage */, Vm = initialState[1]; // Measured voltage
+    if (Vm < Vt * 0.95 && Vm > Vt * 1.05) {
         throw std::runtime_error("(" + Tester.serialNumber + ") Unable to set voltage.");
     }
+
+    // Set load
+    std::string iLoad = std::to_string(initialState[2]);
+    Tester.setLoad(iLoad, "1000");
 
     // Test loop
     auto startTime = std::chrono::steady_clock::now();
     auto limitMinutes = std::chrono::minutes(std::stoi(duration));
     std::cout << "Starting " << limitMinutes.count() << "min test..." << std::endl;
+    
     while (true) {
         // Check remaining time
         auto timeNow = std::chrono::steady_clock::now();
@@ -91,34 +114,35 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
             static_cast<int>(minutes.count()), 
             static_cast<int>(seconds.count()));
 
-        // Detect when output has decreased
-        Stats = Tester.getStatus();
-        if (std::stoi(Stats.sinkVoltage) < testVoltage * 0.8 && std::stoi(Stats.sinkVoltage) > testVoltage * 1.2) {
-
-            // Check that load is nonzero
-            if (Stats.sinkMeasCurrent == "0") {
-                std::string profileStr = getMax(Tester);
-
-                if (!profileStr.empty()) { // Check that backup profile exists
-                    Stats = Tester.setProfile(profileStr);
-                    testVoltage = magic(); // Set backup profile
-
-                    if (std::stoi(Stats.sinkVoltage) > testVoltage * 0.95 && std::stoi(Stats.sinkVoltage) < testVoltage * 1.05) {
-                        // Stats = Tester.setLoad(info.maxCurrent);
-                    }
-
-                } else {
-                    std::cerr << "(" << Tester.serialNumber << ") Voltage dropped, unable to set new profile." << std::endl;
-                }
-            }
-        }
-
         // Print stats to console
+        tester::status Stats = Tester.getStatus();
         printf("sinkVoltage = %smV, sinkMeasCurrent = %smA\n", Stats.sinkVoltage.c_str(), Stats.sinkMeasCurrent.c_str());
         
         if (timeRemaining.count() <= 0) { // Check if test time has expired
             std::cout << "Time limit reached. Terminating test..." << std::endl;
+            Tester.setLoad("0");
             break;
+        }
+
+        // Detect when output has decreased
+        int Vm = std::stoi(Stats.sinkVoltage), Im = std::stoi(Stats.sinkMeasCurrent);
+        if (Vm < Vt * 0.8 && Vm > Vt * 1.2 || Im == 0) {
+            std::string profileStr = getMax(Tester);
+
+            // Check that backup profile exists
+            if (!profileStr.empty()) {
+                Stats = Tester.setProfile(profileStr);
+                std::vector<int> currentState = magic(); // Set backup profile
+                Vt = currentState[0], Vm = currentState[1];
+
+                if (Vm > Vt * 0.95 && Vm < Vt * 1.05) {
+                    iLoad = std::to_string(currentState[2]);
+                    Stats = Tester.setLoad(iLoad, "1000");
+                }
+
+            } else {
+                std::cerr << "(" << Tester.serialNumber << ") Voltage dropped, unable to set new profile." << std::endl;
+            }
         }
 
         int checkInterval = 30 * 1000;
@@ -129,7 +153,16 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
 int main() {
     std::vector<tester> validTesters; // Initialize tester object(s)
 
+    if (!SetConsoleCtrlHandler(CtrlHandler, TRUE)) { // Register control handler to handle Ctrl+C
+        std::cerr << "ERROR: Could not set control handler." << std::endl;
+        return -1;
+    }
+
     try {
+        if (g_abortRequested.load(std::memory_order_relaxed)) {
+            throw CtrlCAbort{};
+        }
+
         validTesters = getTesters();
 
         // User specifies time limit for test
@@ -157,8 +190,8 @@ int main() {
             getline(std::cin, profileStr);
 
             // Check if profileStr is valid
-            if (profileStr.empty()) throw std::runtime_error("Profile selection cannot be empty!");
-            if (!is_numeric(profileStr)) throw std::runtime_error("Profile selection must be an integer!");
+            if (profileStr.empty()) profileStr = getMax(Tester);
+            else if (!is_numeric(profileStr)) throw std::runtime_error("Profile selection must be an integer!");
             int profileNum = std::stoi(profileStr);
             if (profileNum < 1 || profileNum > numProfiles) throw std::runtime_error("Selected profile is out of range!");
 
@@ -190,7 +223,10 @@ int main() {
         // Close handles
         for (HANDLE h : threadHandles) CloseHandle(h);
         threadHandles.clear();
-    } catch (std::runtime_error& e) {
+    } catch (const std::runtime_error& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return -1;
+    } catch (const CtrlCAbort& e) {
         std::cerr << "Error: " << e.what() << std::endl;
         return -1;
     }
