@@ -10,6 +10,122 @@
 #include <sstream>
 #include <chrono>
 
+// Determine max output from available profiles
+std::string getMax(const tester& Tester) {
+    std::string indexStr; // return value
+
+    std::string output = Tester.getProfiles(false);
+    removeBlankLines(output); 
+
+    std::stringstream ss(output);
+    std::string line;
+    int vLast = 5000, iLast = 500, vNow, iNow;
+    while (getline(ss, line)) {
+        size_t pos1 = line.find("V:") + 2;
+        vNow = (pos1 != std::string::npos) ? std::stoi(line.substr(pos1, line.find("mV") - pos1)) : 0;
+
+        size_t pos2 = line.find("I:") + 2;
+        iNow = (pos2 != std::string::npos) ? std::stoi(line.substr(pos2, line.find("mA") - pos2)) : 0;
+
+        size_t pos3 = line.find("INDEX:") + 6;
+        std::string temp = (pos3 != std::string::npos) ? line.substr(pos3, 1) : "";
+        indexStr = (vNow > vLast) ?  temp : (iNow > iLast) ? temp : "";
+    }
+
+    return indexStr;
+}
+
+/**
+ * Logic for battery stress test
+ * (1) Set profile to profileStr
+ * (2) Define time limit and begin test
+ * (3) While test is running, check if voltage has dropped
+ */
+void StressTest(const tester& Tester, const std::string& profileStr, const std::string& duration) {
+    
+    tester::status Stats;
+    auto magic = [&Tester, &profileStr, &Stats]() {
+        int setVoltage; // return value
+        tester::ProfileInfo info = Tester.getProfileInfo(profileStr);
+        
+        // Determine profile type
+        if (info.isVariableVoltage) {
+        // Set to max voltage
+        size_t pos = info.voltageRange.find("-");
+        if (pos != std::string::npos) {
+            setVoltage = std::stoi(info.voltageRange.substr(pos + 1));
+            Stats = Tester.setVariableVoltageProfile(profileStr, setVoltage);
+        }
+        } else {
+            setVoltage = std::stoi(info.voltageRange);
+            Stats = Tester.setProfile(profileStr);
+        }
+
+        return setVoltage;
+    };
+
+    int testVoltage = magic();
+
+    // Check that voltage is set
+    int voltage = std::stoi(Stats.sinkVoltage);
+    if (voltage < testVoltage * 0.95 && voltage > testVoltage * 1.05) {
+        throw std::runtime_error("(" + Tester.serialNumber + ") Unable to set voltage.");
+    }
+
+    // Test loop
+    auto startTime = std::chrono::steady_clock::now();
+    auto limitMinutes = std::chrono::minutes(std::stoi(duration));
+    std::cout << "Starting " << limitMinutes.count() << "min test..." << std::endl;
+    while (true) {
+        // Check remaining time
+        auto timeNow = std::chrono::steady_clock::now();
+        auto timeRemaining = std::chrono::duration_cast<std::chrono::seconds>(limitMinutes - (timeNow - startTime));
+
+        auto hours = std::chrono::duration_cast<std::chrono::hours>(timeRemaining);
+        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(timeRemaining % std::chrono::hours(1));
+        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeRemaining % std::chrono::minutes(1));
+
+        // Format output as h:mm:ss
+        printf("Time remaining: %i:%02i:%02i\n", 
+            static_cast<int>(hours.count()), 
+            static_cast<int>(minutes.count()), 
+            static_cast<int>(seconds.count()));
+
+        // Detect when output has decreased
+        Stats = Tester.getStatus();
+        if (std::stoi(Stats.sinkVoltage) < testVoltage * 0.8 && std::stoi(Stats.sinkVoltage) > testVoltage * 1.2) {
+
+            // Check that load is nonzero
+            if (Stats.sinkMeasCurrent == "0") {
+                std::string profileStr = getMax(Tester);
+
+                if (!profileStr.empty()) { // Check that backup profile exists
+                    Stats = Tester.setProfile(profileStr);
+                    testVoltage = magic(); // Set backup profile
+
+                    if (std::stoi(Stats.sinkVoltage) > testVoltage * 0.95 && std::stoi(Stats.sinkVoltage) < testVoltage * 1.05) {
+                        // Stats = Tester.setLoad(info.maxCurrent);
+                    }
+
+                } else {
+                    std::cerr << "(" << Tester.serialNumber << ") Voltage dropped, unable to set new profile." << std::endl;
+                }
+            }
+        }
+
+        // Print stats to console
+        printf("sinkVoltage = %smV, sinkMeasCurrent = %smA\n", Stats.sinkVoltage.c_str(), Stats.sinkMeasCurrent.c_str());
+        
+        if (timeRemaining.count() <= 0) { // Check if test time has expired
+            std::cout << "Time limit reached. Terminating test..." << std::endl;
+            break;
+        }
+
+        int checkInterval = 30 * 1000;
+        Sleep(checkInterval);
+    }
+}
+
 int main() {
     std::vector<tester> validTesters; // Initialize tester object(s)
 
@@ -46,66 +162,9 @@ int main() {
             int profileNum = std::stoi(profileStr);
             if (profileNum < 1 || profileNum > numProfiles) throw std::runtime_error("Selected profile is out of range!");
 
-            /**
-             * Main logic for battery stress test
-             * (1) Set profile to profileStr
-             * (2) Define time limit
-             */
-
-            auto batstress = [&Tester, &duration](std::string profileStr) {
-                tester::ProfileInfo info = Tester.getProfileInfo(profileStr);
-                tester::status Stats;
-                int testVoltage;
-                if (info.isVariableVoltage) {
-                    // Set to max voltage
-                    size_t pos = info.voltageRange.find("-");
-                    if (pos != std::string::npos) {
-                        testVoltage = std::stoi(info.voltageRange.substr(pos + 1));
-                        Stats = Tester.setVariableVoltageProfile(profileStr, testVoltage);
-                    }
-                } else {
-                    testVoltage = std::stoi(info.voltageRange);
-                    Stats = Tester.setProfile(profileStr);
-                }
-
-                // Check that voltage is set
-                int voltage = std::stoi(Stats.sinkVoltage);
-                if (voltage < testVoltage * 0.95 && voltage > testVoltage * 1.05) {
-                    throw std::runtime_error("(" + Tester.serialNumber + ") Unable to set voltage.");
-                }
-
-                auto startTime = std::chrono::steady_clock::now();
-                auto limitMinutes = std::chrono::minutes(std::stoi(duration));
-                while (true) {
-                    // Print stats to console
-                    Stats = Tester.getStatus();
-                    printf("sinkVoltage = %smV, sinkMeasCurrent = %smA\n", Stats.sinkVoltage.c_str(), Stats.sinkMeasCurrent.c_str());
-                    
-                    // Check remaining time
-                    auto timeNow = std::chrono::steady_clock::now();
-                    auto timeElapsed = std::chrono::duration_cast<std::chrono::seconds>(timeNow - startTime);
-                    if (timeElapsed > limitMinutes) {
-                        std::cout << "Time limit reached. Terminating test..." << std::endl; 
-                        break;
-                    } else {
-                        auto timeRemaining = std::chrono::duration_cast<std::chrono::seconds>(limitMinutes) - timeElapsed;
-                        auto hours = std::chrono::duration_cast<std::chrono::hours>(timeRemaining);
-                        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(timeRemaining % std::chrono::hours(1));
-                        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeRemaining % std::chrono::minutes(1));
-
-                        // Format output as h:mm:ss
-                        // %u for unsigned int, %02u to ensure 2 digits with a leading zero
-                        printf("Time remaining: %i:%02i:%02i\n", hours.count(), minutes.count(), seconds.count());
-                    }
-
-                    int checkInterval = 30 * 1000;
-                    Sleep(checkInterval);
-                }
-            };
-
             // Create thread in suspended state
-            HANDLE hThread = Bridge::startSuspended([&Tester, &profileStr, &duration, &batstress]() {
-                batstress(profileStr); // <<< CHANGE TO STRESS TEST FUNCTION ONCE WRITTEN
+            HANDLE hThread = Bridge::startSuspended([&Tester, &profileStr, &duration]() {
+                StressTest(Tester, profileStr, duration);
             });
 
             // Check that handle isn't NULL
