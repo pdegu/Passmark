@@ -10,6 +10,7 @@
 #include <sstream>
 #include <chrono>
 #include <atomic>
+#include <algorithm>
 
 // Determine max output from available profiles
 std::string getMax(const tester& Tester) {
@@ -28,17 +29,25 @@ std::string getMax(const tester& Tester) {
         if (pos1 != std::string::npos) {
             std::string temp = line.substr(pos1 + searchStr.size(), 1);
             searchStr = "V:";
-            size_t pos2 = line.find(searchStr);
-            tester::ProfileInfo info = Tester.getProfileInfo(temp);
+            size_t pos2 = line.find(searchStr, pos1);
+            // tester::ProfileInfo info = Tester.getProfileInfo(temp);
+            bool isVariableVoltage = false;
+            std::for_each(VariableVoltageTypes.begin(), VariableVoltageTypes.end(), [&](std::string s) {
+                size_t Pos1 = line.find("TYPE:", pos1);
+                size_t Pos2 = line.find(",", Pos1);
+                if (Pos1 != std::string::npos && Pos2 != std::string::npos) {
+                    isVariableVoltage = (line.substr(Pos1, Pos2 - Pos1) == s) ? true : false;
+                }
+            });
 
-            if (info.isVariableVoltage) {
+            if (isVariableVoltage) {
                 searchStr = "-";
                 pos2 = (pos2 != std::string::npos) ? line.find(searchStr, pos2) : std::string::npos;
             }
             vNow = (pos2 != std::string::npos) ? std::stoi(getNumStr(line, pos2 + searchStr.size())) : 0;
 
             searchStr = "I:";
-            size_t pos3 = line.find(searchStr);
+            size_t pos3 = line.find(searchStr, pos2);
             iNow = (pos3 != std::string::npos) ? std::stoi(getNumStr(line, pos3 + searchStr.size())) : 0;
 
             indexStr = (vNow > vLast) ?  temp : (iNow > iLast) ? temp : indexStr;
@@ -92,7 +101,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
 
     // Set load
     std::string iLoad = std::to_string(initialState[2]);
-    Tester.setLoad(iLoad, "1000");
+    Tester.setLoad(iLoad);
 
     // Test loop
     auto startTime = std::chrono::steady_clock::now();
@@ -120,6 +129,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         
         if (timeRemaining.count() <= 0) { // Check if test time has expired
             std::cout << "Time limit reached. Terminating test..." << std::endl;
+            Tester.setProfile("1");
             Tester.setLoad("0");
             break;
         }
@@ -137,7 +147,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
 
                 if (Vm > Vt * 0.95 && Vm < Vt * 1.05) {
                     iLoad = std::to_string(currentState[2]);
-                    Stats = Tester.setLoad(iLoad, "1000");
+                    Stats = Tester.setLoad(iLoad);
                 }
 
             } else {
@@ -185,12 +195,15 @@ int main() {
             if (numProfiles == 0) throw std::runtime_error("No DUT found."); // Check if no profiles are found
 
             // Ask user which profile to test
-            std::cout << "Select profile to test:\t";
+            std::cout << "Select profile to test or press enter for auto select:\t";
             std::string profileStr = "";
             getline(std::cin, profileStr);
 
             // Check if profileStr is valid
-            if (profileStr.empty()) profileStr = getMax(Tester);
+            if (profileStr.empty()) {
+                profileStr = getMax(Tester);
+                std::cout << "Profile " << profileStr << " selected." << std::endl;
+            }
             else if (!is_numeric(profileStr)) throw std::runtime_error("Profile selection must be an integer!");
             int profileNum = std::stoi(profileStr);
             if (profileNum < 1 || profileNum > numProfiles) throw std::runtime_error("Selected profile is out of range!");

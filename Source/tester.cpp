@@ -116,9 +116,6 @@ tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
             if (p < output.size()) p += 1;
         }
 
-         // Modify this string to add additional types
-         std::vector<std::string> VariableVoltageTypes{"PD-APDO", "PD-PPS", "QC2", "QC3"};
-
         // Set variable voltage flag if detected
         for (std::string s : VariableVoltageTypes) {
             if (type == s) info.isVariableVoltage = true;
@@ -332,3 +329,6 @@ void removeBlankLines(std::string& string_to_filter) {
         }
     }
 }
+
+// Modify this string to add additional types
+std::vector<std::string> VariableVoltageTypes{"PD-APDO", "PD-PPS", "QC2", "QC3"};

@@ -19,12 +19,10 @@ std::string getNumStr(const std::string& inputStr, const size_t& startPos);
 // Check which testers are available and claim
 std::vector<tester> getTesters();
 
-std::atomic<bool> g_abortRequested(false);
+extern std::atomic<bool> g_abortRequested;
 
 struct CtrlCAbort : public std::exception {
-    const char* what() const noexcept override {
-        return "Ctrl+C abort requested";
-    }
+    const char* what() const noexcept override;
 };
 
 BOOL WINAPI CtrlHandler(DWORD ctrlType);

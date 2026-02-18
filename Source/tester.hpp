@@ -81,3 +81,5 @@ std::string runCommand(const tester& dev, const std::string& commandArg);
 
 // Remove blank lines from Passmark console output string
 void removeBlankLines(std::string& string_to_filter);
+
+extern std::vector<std::string> VariableVoltageTypes;

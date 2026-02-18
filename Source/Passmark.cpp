@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <Windows.h>
+#include <atomic>
 
 bool is_numeric(std::string numStr) {
     for (char c : numStr) {
@@ -56,6 +57,12 @@ std::vector<tester> getTesters() {
     }
 
     return validTesters;
+}
+
+std::atomic<bool> g_abortRequested(false);
+
+const char* CtrlCAbort::what() const noexcept {
+    return "Ctrl+C abort requested";
 }
 
 BOOL WINAPI CtrlHandler(DWORD ctrlType) {
