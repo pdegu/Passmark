@@ -89,6 +89,24 @@ bool tester::tryClaim(std::string sn) {
     return false;
 }
 
+void tester::getProfileList() {
+    std::string output = runCommand(*this, "-p");
+    if (output.empty()) {
+        std::string errorMsg = (this->serialNumber.empty()) ? "" : "(" + this->serialNumber + ") ";
+        throw std::runtime_error(errorMsg + "No response from tester.");
+    }
+
+    removeBlankLines(output);
+
+    std::stringstream ss(output);
+    std::string line;
+    while (getline(ss, line, '\n')) {
+        size_t pos;
+        // while ((pos = line.find("\n")) != std::string::npos) line.erase(pos);
+        if (line.find("INDEX:") != std::string::npos) this->profileList.push_back(line);
+    }
+}
+
 std::string tester::getProfiles(bool toConsole) const {
     std::string output = runCommand(*this, "-p");
     if (output.empty()) {
@@ -105,15 +123,15 @@ std::string tester::getProfiles(bool toConsole) const {
 tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
     ProfileInfo info;
     std::string searchStr = "INDEX:" + profile;
-    std::string output = this->getProfiles(false);
-    size_t foundPos = output.find(searchStr);
+    std::string profileStr = this->profileList[std::stoi(profile)];
+    size_t foundPos = profileStr.find(searchStr);
     if (foundPos != std::string::npos) { // match for searchStr was found
-        size_t tPos1 = output.find("TYPE:", foundPos) + 5;
+        size_t tPos1 = profileStr.find("TYPE:", foundPos) + 5;
         std::string type = "";
         size_t p = tPos1;
-        while (output[p] != ',') {
-            type.push_back(output[p]);
-            if (p < output.size()) p += 1;
+        while (profileStr[p] != ',') {
+            type.push_back(profileStr[p]);
+            if (p < profileStr.size()) p += 1;
         }
 
         // Set variable voltage flag if detected
@@ -122,14 +140,14 @@ tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
         }
 
         // Populate voltage range
-        size_t vPos1 = output.find("V:", foundPos) + 2;
-        size_t vPos2 = output.find("mV", foundPos);
-        info.voltageRange = output.substr(vPos1, vPos2 - vPos1);
+        size_t vPos1 = profileStr.find("V:", foundPos) + 2;
+        size_t vPos2 = profileStr.find("mV", foundPos);
+        info.voltageRange = profileStr.substr(vPos1, vPos2 - vPos1);
 
         // Populate max current
-        size_t iPos1 = output.find("I:", foundPos) + 2;
-        size_t iPos2 = output.find("mA", foundPos);
-        info.maxCurrent = output.substr(iPos1, iPos2 - iPos1);
+        size_t iPos1 = profileStr.find("I:", foundPos) + 2;
+        size_t iPos2 = profileStr.find("mA", foundPos);
+        info.maxCurrent = profileStr.substr(iPos1, iPos2 - iPos1);
     } else throw std::runtime_error("(" + this->serialNumber + ") Profile not found.");
 
     return info;

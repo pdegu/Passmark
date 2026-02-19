@@ -33,6 +33,10 @@ public:
     // Declarations for functions defined in tester.cpp
     bool tryClaim(std::string sn);
 
+    std::vector<std::string> profileList;
+
+    void getProfileList();
+
     // Get supported profiles from DUT
     std::string getProfiles(bool toConsole) const;
 

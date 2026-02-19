@@ -16,73 +16,69 @@
 std::string getMax(const tester& Tester) {
     std::string indexStr = ""; // return value
 
-    std::string output = Tester.getProfiles(false);
-    removeBlankLines(output); 
+    // Initialize loop variables
+    int voltage = 5000, current = 500, pNow;
+    int pLast = voltage * current;
 
-    std::stringstream ss(output);
-    std::string line;
-    int vLast = 5000, iLast = 500, vNow, iNow;
-    while (getline(ss, line)) {
+    for (std::string line : Tester.profileList) { // Iterate through output line by line
         std::string searchStr = "INDEX:";
         size_t pos1 = line.find(searchStr);
 
-        if (pos1 != std::string::npos) {
+        if (pos1 != std::string::npos) { // Get index of current profile
             std::string temp = line.substr(pos1 + searchStr.size(), 1);
             searchStr = "V:";
             size_t pos2 = line.find(searchStr, pos1);
-            // tester::ProfileInfo info = Tester.getProfileInfo(temp);
+            
+            // Check if profile is variable voltage type
             bool isVariableVoltage = false;
             std::for_each(VariableVoltageTypes.begin(), VariableVoltageTypes.end(), [&](std::string s) {
                 size_t Pos1 = line.find("TYPE:", pos1);
                 size_t Pos2 = line.find(",", Pos1);
                 if (Pos1 != std::string::npos && Pos2 != std::string::npos) {
-                    isVariableVoltage = (line.substr(Pos1, Pos2 - Pos1) == s) ? true : false;
+                    Pos1 += 5;
+                    isVariableVoltage = (line.substr(Pos1, Pos2 - Pos1) == s) ? true : isVariableVoltage;
                 }
             });
 
+            // Get max supported voltage of profile
             if (isVariableVoltage) {
                 searchStr = "-";
                 pos2 = (pos2 != std::string::npos) ? line.find(searchStr, pos2) : std::string::npos;
             }
-            vNow = (pos2 != std::string::npos) ? std::stoi(getNumStr(line, pos2 + searchStr.size())) : 0;
+            voltage = (pos2 != std::string::npos) ? std::stoi(getNumStr(line, pos2 + searchStr.size())) : 0;
 
+            // Get max supported current of profile
             searchStr = "I:";
             size_t pos3 = line.find(searchStr, pos2);
-            iNow = (pos3 != std::string::npos) ? std::stoi(getNumStr(line, pos3 + searchStr.size())) : 0;
+            current = (pos3 != std::string::npos) ? std::stoi(getNumStr(line, pos3 + searchStr.size())) : 0;
 
-            indexStr = (vNow > vLast) ?  temp : (iNow > iLast) ? temp : indexStr;
-
-            if (indexStr == temp) {
-                vLast = vNow;
-                iLast = iNow;
-            }
+            // Determine max power supported by profile and if greater than previous profile, set return value to current profile index
+            pNow = voltage * current;
+            indexStr = (pNow > pLast) ?  temp : indexStr;
+            pLast = (indexStr == temp) ? pNow : pLast;
         }
     }
 
     return indexStr;
 }
 
-/**
- * Logic for battery stress test
- * (1) Set profile to profileStr
- * (2) Define time limit and begin test
- * (3) While test is running, check if voltage has dropped
- */
+// Logic for power bank stress test
 void StressTest(const tester& Tester, const std::string& profileStr, const std::string& duration) { std::cout << "Pit stop!" << std::endl;
-    
+
     auto magic = [&Tester, &profileStr]() {
         int setVoltage; // return value
         tester::ProfileInfo info = Tester.getProfileInfo(profileStr);
         tester::status Stats;
         
-        // Determine profile type
+        // Determine profile type and set to max supported voltage
         if (info.isVariableVoltage) {
-        // Set to max voltage
-        size_t pos = info.voltageRange.find("-");
-        if (pos != std::string::npos) {
-            setVoltage = std::stoi(info.voltageRange.substr(pos + 1));
-            Stats = Tester.setVariableVoltageProfile(profileStr, setVoltage);
-        }
+            size_t pos = info.voltageRange.find("-");
+
+            if (pos != std::string::npos) {
+                setVoltage = std::stoi(info.voltageRange.substr(pos + 1));
+                Stats = Tester.setVariableVoltageProfile(profileStr, setVoltage);
+            }
+
         } else {
             setVoltage = std::stoi(info.voltageRange);
             Stats = Tester.setProfile(profileStr);
@@ -137,21 +133,24 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         // Detect when output has decreased
         int Vm = std::stoi(Stats.sinkVoltage), Im = std::stoi(Stats.sinkMeasCurrent);
         if (Vm < Vt * 0.8 && Vm > Vt * 1.2 || Im == 0) {
-            std::string profileStr = getMax(Tester);
+            std::string newProfileStr = getMax(Tester);
+            std::cout << "Drop in output detected. Setting new profile..." << std::endl;
 
             // Check that backup profile exists
-            if (!profileStr.empty()) {
-                Stats = Tester.setProfile(profileStr);
+            if (!newProfileStr.empty()) {
+                Stats = Tester.setProfile(newProfileStr);
                 std::vector<int> currentState = magic(); // Set backup profile
                 Vt = currentState[0], Vm = currentState[1];
+                std::cout << "New profile: " << newProfileStr << std::endl;
 
+                // Check that profile is set
                 if (Vm > Vt * 0.95 && Vm < Vt * 1.05) {
                     iLoad = std::to_string(currentState[2]);
-                    Stats = Tester.setLoad(iLoad);
+                    Stats = Tester.setLoad(iLoad); // Set load
                 }
 
             } else {
-                std::cerr << "(" << Tester.serialNumber << ") Voltage dropped, unable to set new profile." << std::endl;
+                std::cerr << "(" << Tester.serialNumber << ") Unable to set new profile." << std::endl;
             }
         }
 
@@ -169,9 +168,9 @@ int main() {
     }
 
     try {
-        if (g_abortRequested.load(std::memory_order_relaxed)) {
-            throw CtrlCAbort{};
-        }
+        // if (g_abortRequested.load(std::memory_order_relaxed)) {
+        //     throw CtrlCAbort{};
+        // }
 
         validTesters = getTesters();
 
@@ -185,17 +184,15 @@ int main() {
         std::vector<HANDLE> threadHandles;
         for (auto& Tester : validTesters) {
             std::cout << "\nTester: " << Tester.serialNumber << "\n--------------------------" << std::endl; 
-            std::string output = Tester.getProfiles(true); // Discover supported profiles for DUT
-            size_t pos = output.find("NUM PROFILES:");
-            int numProfiles;
-            if (pos != std::string::npos) {
-                std::string numProfilesStr = output.substr(pos + 13); // Extract number of profiles from output
-                numProfiles = std::stoi(numProfilesStr);
-            }
+            Tester.getProfileList();
+            int numProfiles = Tester.profileList.size();
             if (numProfiles == 0) throw std::runtime_error("No DUT found."); // Check if no profiles are found
 
+            std::cout << "NUM PROFILES:" << numProfiles << std::endl;
+            for (std::string s : Tester.profileList) std::cout << s << std::endl;
+
             // Ask user which profile to test
-            std::cout << "Select profile to test or press enter for auto select:\t";
+            std::cout << "\nSelect profile to test or press enter for auto select:\t";
             std::string profileStr = "";
             getline(std::cin, profileStr);
 
