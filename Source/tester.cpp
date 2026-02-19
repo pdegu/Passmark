@@ -123,7 +123,7 @@ std::string tester::getProfiles(bool toConsole) const {
 tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
     ProfileInfo info;
     std::string searchStr = "INDEX:" + profile;
-    std::string profileStr = this->profileList[std::stoi(profile)];
+    std::string profileStr = this->profileList[std::stoi(profile) - 1];
     size_t foundPos = profileStr.find(searchStr);
     if (foundPos != std::string::npos) { // match for searchStr was found
         size_t tPos1 = profileStr.find("TYPE:", foundPos) + 5;
@@ -187,9 +187,17 @@ tester::status tester::getStatus() const {
         } else throw std::runtime_error("(" + this->serialNumber + ") Tester failed to respond.");
     };
 
-    Stats.sinkVoltage = getReturnStr("SINK VOLTAGE:");
-    Stats.sinkSetCurrent = getReturnStr("SINK SET CURRENT:");
-    Stats.sinkMeasCurrent = getReturnStr("SINK MEASURED CURRENT:");
+    if (this->isPM125()) {
+        Stats.sinkVoltage = getReturnStr("VOLTAGE:");
+        Stats.sinkSetCurrent = getReturnStr("SET CURRENT:");
+        Stats.sinkMeasCurrent = getReturnStr("MEASURED CURRENT:");
+    }
+    if (this->isPM240()) {
+        Stats.sinkVoltage = getReturnStr("SINK VOLTAGE:");
+        Stats.sinkSetCurrent = getReturnStr("SINK SET CURRENT:");
+        Stats.sinkMeasCurrent = getReturnStr("SINK MEASURED CURRENT:");
+    }
+
     return Stats;
 }
 
@@ -212,6 +220,11 @@ tester::status tester::setLoad(std::string loadCurrent, const std::string& loadS
  
     Sleep(500); // Allow time for current to settle
     return getStatus();
+}
+
+tester::status tester::unload() const {
+    this->setProfile("1");
+    return this->setLoad("0");
 }
 
 void tester::testSinkVoltage(std::string profileStr) const {

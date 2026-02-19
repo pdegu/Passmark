@@ -15,11 +15,11 @@ testerList findTesters();
 class tester
 {
 private:
-    std::string type;
     HANDLE hMutex; // Stores "lock" on Passmark tester
 
 public:
     std::string serialNumber;
+    std::string type;
 
     // Constructors and destructors
     tester(); // Default constructor
@@ -75,6 +75,9 @@ public:
 
     // Set load current
     status setLoad(std::string maxCurrent, const std::string& loadSpeed = "200") const;
+
+    // Set load to zero
+    status unload() const;
 
     // Lock tester and run core 
     void testSinkVoltage(std::string profileStr) const;

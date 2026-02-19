@@ -63,7 +63,7 @@ std::string getMax(const tester& Tester) {
 }
 
 // Logic for power bank stress test
-void StressTest(const tester& Tester, const std::string& profileStr, const std::string& duration) { std::cout << "Pit stop!" << std::endl;
+void StressTest(const tester& Tester, const std::string& profileStr, const std::string& duration) { //std::cout << "Pit stop!" << std::endl;
 
     auto magic = [&Tester, &profileStr]() {
         int setVoltage; // return value
@@ -82,9 +82,9 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         } else {
             setVoltage = std::stoi(info.voltageRange);
             Stats = Tester.setProfile(profileStr);
-        }
+        } std::cout << Stats.sinkVoltage << "," << info.maxCurrent << std::endl;
 
-        return std::vector<int>{setVoltage,std::stoi(Stats.sinkVoltage),std::stoi(info.maxCurrent)};
+        return std::vector<int>{setVoltage, std::stoi(Stats.sinkVoltage), std::stoi(info.maxCurrent)};
     };
 
     std::vector<int> initialState = magic();
@@ -104,7 +104,15 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
     auto limitMinutes = std::chrono::minutes(std::stoi(duration));
     std::cout << "Starting " << limitMinutes.count() << "min test..." << std::endl;
     
+    int errCount = 0;
+
     while (true) {
+        // Check for abort at the start of every iteration
+        if (g_abortRequested.load(std::memory_order_relaxed)) {
+            Tester.setLoad("0"); // Safety: Unload before exiting
+            throw CtrlCAbort{};
+        }
+
         // Check remaining time
         auto timeNow = std::chrono::steady_clock::now();
         auto timeRemaining = std::chrono::duration_cast<std::chrono::seconds>(limitMinutes - (timeNow - startTime));
@@ -125,8 +133,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         
         if (timeRemaining.count() <= 0) { // Check if test time has expired
             std::cout << "Time limit reached. Terminating test..." << std::endl;
-            Tester.setProfile("1");
-            Tester.setLoad("0");
+            Tester.unload();
             break;
         }
 
@@ -151,11 +158,24 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
 
             } else {
                 std::cerr << "(" << Tester.serialNumber << ") Unable to set new profile." << std::endl;
+                errCount += 1;
             }
         }
 
-        int checkInterval = 30 * 1000;
-        Sleep(checkInterval);
+        if (errCount >= 3) {
+            std::cerr << "DUT failed to respond after " << errCount << " attempts. Exiting program..." << std::endl;
+            Tester.unload();
+            throw std::runtime_error("DUT unresponive.");
+        }
+
+        int sleepInterval = 30;
+        for (int i = 0; i < sleepInterval; ++i) {
+            if (g_abortRequested.load(std::memory_order_relaxed)) {
+                Tester.unload();
+                throw CtrlCAbort{};
+            }
+            Sleep(1000); 
+        }
     }
 }
 
@@ -168,10 +188,6 @@ int main() {
     }
 
     try {
-        // if (g_abortRequested.load(std::memory_order_relaxed)) {
-        //     throw CtrlCAbort{};
-        // }
-
         validTesters = getTesters();
 
         // User specifies time limit for test
