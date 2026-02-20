@@ -35,9 +35,10 @@ std::vector<tester> getTesters() {
     testerList list = findTesters();
 
     // User selects tester(s)
-    std::cout << "Enter tester(s) to be used. For multiple testers, separate tester numbers with commas. Do not use spaces.\n";
+    std::cout << "Enter tester(s) to be used. For multiple testers, separate tester numbers with commas. Do not use spaces.\n\nSelection:\t";
     std::string selection;
     getline(std::cin, selection);
+    std::cout << std::endl;
     if (selection.empty()) throw std::runtime_error("No tester(s) selected.");
 
     // Initialize tester objects
@@ -80,3 +81,5 @@ BOOL WINAPI CtrlHandler(DWORD ctrlType) {
             return FALSE;
     }
 }
+
+int colors[] = {10, 11, 14, 13}; // Green, Cyan, Yellow, Magenta

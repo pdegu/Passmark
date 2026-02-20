@@ -9,6 +9,8 @@
 #include <Windows.h>
 #include <atomic>
 #include <stdexcept>
+#include <sstream>
+#include <iostream>
 
 // Check if string is numeric
 bool is_numeric(std::string numStr);
@@ -26,3 +28,5 @@ struct CtrlCAbort : public std::exception {
 };
 
 BOOL WINAPI CtrlHandler(DWORD ctrlType);
+
+extern int colors[];

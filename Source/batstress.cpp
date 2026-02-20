@@ -11,6 +11,7 @@
 #include <chrono>
 #include <atomic>
 #include <algorithm>
+#include <iomanip>
 
 // Determine max output from available profiles
 std::string getMax(const tester& Tester) {
@@ -82,7 +83,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         } else {
             setVoltage = std::stoi(info.voltageRange);
             Stats = Tester.setProfile(profileStr);
-        } std::cout << Stats.sinkVoltage << "," << info.maxCurrent << std::endl;
+        }
 
         return std::vector<int>{setVoltage, std::stoi(Stats.sinkVoltage), std::stoi(info.maxCurrent)};
     };
@@ -102,7 +103,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
     // Test loop
     auto startTime = std::chrono::steady_clock::now();
     auto limitMinutes = std::chrono::minutes(std::stoi(duration));
-    std::cout << "Starting " << limitMinutes.count() << "min test..." << std::endl;
+    Tester.log() << "Starting " << limitMinutes.count() << "min test...";
     
     int errCount = 0;
 
@@ -122,17 +123,17 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeRemaining % std::chrono::minutes(1));
 
         // Format output as h:mm:ss
-        printf("Time remaining: %i:%02i:%02i\n", 
-            static_cast<int>(hours.count()), 
-            static_cast<int>(minutes.count()), 
-            static_cast<int>(seconds.count()));
+        Tester.log() << "Time remaining: "
+                     << hours.count() << ":"
+                     << std::setfill('0') << std::setw(2) << minutes.count() << ":"
+                     << std::setfill('0') << std::setw(2) << seconds.count();
 
         // Print stats to console
         tester::status Stats = Tester.getStatus();
-        printf("sinkVoltage = %smV, sinkMeasCurrent = %smA\n", Stats.sinkVoltage.c_str(), Stats.sinkMeasCurrent.c_str());
+        Tester.log() << "Sink voltage = " << Stats.sinkVoltage << "mV\tSink measured current = " << Stats.sinkMeasCurrent << "mA";
         
         if (timeRemaining.count() <= 0) { // Check if test time has expired
-            std::cout << "Time limit reached. Terminating test..." << std::endl;
+            Tester.log() << "Time limit reached. Terminating test...";
             Tester.unload();
             break;
         }
@@ -141,14 +142,14 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         int Vm = std::stoi(Stats.sinkVoltage), Im = std::stoi(Stats.sinkMeasCurrent);
         if (Vm < Vt * 0.8 && Vm > Vt * 1.2 || Im == 0) {
             std::string newProfileStr = getMax(Tester);
-            std::cout << "Drop in output detected. Setting new profile..." << std::endl;
+            Tester.log() << "Drop in output detected. Setting new profile...";
 
             // Check that backup profile exists
             if (!newProfileStr.empty()) {
                 Stats = Tester.setProfile(newProfileStr);
                 std::vector<int> currentState = magic(); // Set backup profile
                 Vt = currentState[0], Vm = currentState[1];
-                std::cout << "New profile: " << newProfileStr << std::endl;
+                Tester.log() << "New profile: " << newProfileStr;
 
                 // Check that profile is set
                 if (Vm > Vt * 0.95 && Vm < Vt * 1.05) {
@@ -191,15 +192,19 @@ int main() {
         validTesters = getTesters();
 
         // User specifies time limit for test
-        std::cout << "Enter test duration in minutes. Default is 120m.\n";
+        std::cout << "Enter test duration in minutes. Default is 120m.\n\nTest duration:\t";
         std::string duration = "";
         getline(std::cin, duration);
         if (duration.empty() || !is_numeric(duration)) duration = "120";
 
         // Create a thread for each tester to run tests simultaneously
         std::vector<HANDLE> threadHandles;
+        int colorIdx = 0;
         for (auto& Tester : validTesters) {
-            std::cout << "\nTester: " << Tester.serialNumber << "\n--------------------------" << std::endl; 
+            Tester.consoleColor = colors[colorIdx % 4]; // Assign a unique color
+            ++colorIdx;
+
+            std::cout << "\nTester: " << Tester.serialNumber << "\n--------------------------" << std::endl;
             Tester.getProfileList();
             int numProfiles = Tester.profileList.size();
             if (numProfiles == 0) throw std::runtime_error("No DUT found."); // Check if no profiles are found

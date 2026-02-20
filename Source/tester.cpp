@@ -89,6 +89,8 @@ bool tester::tryClaim(std::string sn) {
     return false;
 }
 
+TesterStream tester::log() const { return TesterStream(*this); }
+
 void tester::getProfileList() {
     std::string output = runCommand(*this, "-p");
     if (output.empty()) {
