@@ -104,12 +104,11 @@ void tester::getProfileList() {
     std::string line;
     while (getline(ss, line, '\n')) {
         size_t pos;
-        // while ((pos = line.find("\n")) != std::string::npos) line.erase(pos);
         if (line.find("INDEX:") != std::string::npos) this->profileList.push_back(line);
     }
 }
 
-std::string tester::getProfiles(bool toConsole) const {
+std::string tester::getProfiles(const bool& toConsole) const {
     std::string output = runCommand(*this, "-p");
     if (output.empty()) {
         std::string errorMsg = (this->serialNumber.empty()) ? "" : "(" + this->serialNumber + ") ";
@@ -122,7 +121,7 @@ std::string tester::getProfiles(bool toConsole) const {
     return output;
 }
 
-tester::ProfileInfo tester::getProfileInfo(std::string profile) const {
+tester::ProfileInfo tester::getProfileInfo(const std::string& profile) const {
     ProfileInfo info;
     std::string searchStr = "INDEX:" + profile;
     std::string profileStr = this->profileList[std::stoi(profile) - 1];
@@ -176,9 +175,9 @@ tester::status tester::getStatus() const {
     status Stats;
 
     auto getReturnStr = [this, &output](std::string inputStr) {
-        size_t startPos = output.find(inputStr) + inputStr.size();
+        size_t startPos = output.find(inputStr);
         if (startPos != std::string::npos) { // Tester responded
-            size_t p = startPos;
+            size_t p = startPos + inputStr.size();
             std::string ReturnStr = "";
             while (isdigit(output[p])) {
                 ReturnStr.push_back(output[p]);
@@ -203,19 +202,19 @@ tester::status tester::getStatus() const {
     return Stats;
 }
 
-tester::status tester::setProfile(std::string profileNumStr) const {
+tester::status tester::setProfile(const std::string& profileNumStr) const {
     runCommand(*this, "-v " + profileNumStr); // Console command to set profile
     Sleep(3000); // Allow time for voltage to settle
     return getStatus();
 }
 
-tester::status tester::setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const {
+tester::status tester::setVariableVoltageProfile(const std::string& profileNumStr, const int& sinkVoltage) const {
     runCommand(*this, "-v " + profileNumStr + "," + std::to_string(sinkVoltage)); // Console command to set profile
     Sleep(3000); // Allow time for voltage to settle
     return getStatus();
 }
 
-tester::status tester::setLoad(std::string loadCurrent, const std::string& loadSpeed) const {
+tester::status tester::setLoad(const std::string& loadCurrent, const std::string& loadSpeed) const {
     // Send set load command to tester
     if (this->isPM125()) runCommand(*this, "-l " + loadCurrent);
     if (this->isPM240()) runCommand(*this, "-l " + loadCurrent + "," + loadSpeed);
@@ -229,7 +228,7 @@ tester::status tester::unload() const {
     return this->setLoad("0");
 }
 
-void tester::testSinkVoltage(std::string profileStr) const {
+void tester::testSinkVoltage(const std::string& profileStr) const {
     /**
      * Main logic for USB protocol test is implemented here.
      * (1) Check if profileStr is empty. If its not empty, only test profiles specified. Assume that profiles were already checked to be valid.

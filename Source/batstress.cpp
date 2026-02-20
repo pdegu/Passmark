@@ -122,6 +122,8 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         auto minutes = std::chrono::duration_cast<std::chrono::minutes>(timeRemaining % std::chrono::hours(1));
         auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeRemaining % std::chrono::minutes(1));
 
+        if (seconds.count() < 0) seconds = std::chrono::seconds(0);
+
         // Format output as h:mm:ss
         Tester.log() << "Time remaining: "
                      << hours.count() << ":"
@@ -130,7 +132,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
 
         // Print stats to console
         tester::status Stats = Tester.getStatus();
-        Tester.log() << "Sink voltage = " << Stats.sinkVoltage << "mV\tSink measured current = " << Stats.sinkMeasCurrent << "mA";
+        Tester.log() << "Sink voltage = " << Stats.sinkVoltage << "mV, Sink measured current = " << Stats.sinkMeasCurrent << "mA";
         
         if (timeRemaining.count() <= 0) { // Check if test time has expired
             Tester.log() << "Time limit reached. Terminating test...";
@@ -205,6 +207,11 @@ int main() {
             ++colorIdx;
 
             std::cout << "\nTester: " << Tester.serialNumber << "\n--------------------------" << std::endl;
+
+            /**
+             * Insert code for getting part number here
+             */
+
             Tester.getProfileList();
             int numProfiles = Tester.profileList.size();
             if (numProfiles == 0) throw std::runtime_error("No DUT found."); // Check if no profiles are found

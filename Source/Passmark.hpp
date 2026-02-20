@@ -13,7 +13,7 @@
 #include <iostream>
 
 // Check if string is numeric
-bool is_numeric(std::string numStr);
+bool is_numeric(const std::string& numStr);
 
 // Return string with only numeric characters
 std::string getNumStr(const std::string& inputStr, const size_t& startPos);

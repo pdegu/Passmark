@@ -47,7 +47,7 @@ public:
     void getProfileList();
 
     // Get supported profiles from DUT
-    std::string getProfiles(bool toConsole) const;
+    std::string getProfiles(const bool& toConsole) const;
 
     // Object to store detected profile info
     struct ProfileInfo {
@@ -57,7 +57,7 @@ public:
     };
 
     // Get profile info
-    ProfileInfo getProfileInfo(std::string profile) const;
+    ProfileInfo getProfileInfo(const std::string& profile) const;
     
     // Assign tester type
     void assignType(const std::string& typeStr);
@@ -77,19 +77,19 @@ public:
     status getStatus() const;
 
     // Set DUT profile
-    status setProfile(std::string profileNumStr) const;
+    status setProfile(const std::string& profileNumStr) const;
 
     // Set DUT variable voltage profile
-    status setVariableVoltageProfile(std::string profileNumStr, int sinkVoltage) const;
+    status setVariableVoltageProfile(const std::string& profileNumStr, const int& sinkVoltage) const;
 
     // Set load current
-    status setLoad(std::string maxCurrent, const std::string& loadSpeed = "200") const;
+    status setLoad(const std::string& maxCurrent, const std::string& loadSpeed = "200") const;
 
     // Set load to zero
     status unload() const;
 
     // Lock tester and run core 
-    void testSinkVoltage(std::string profileStr) const;
+    void testSinkVoltage(const std::string& profileStr) const;
 };
 
 class TesterStream {

@@ -8,7 +8,7 @@
 #include <Windows.h>
 #include <atomic>
 
-bool is_numeric(std::string numStr) {
+bool is_numeric(const std::string& numStr) {
     for (char c : numStr) {
         if (!isdigit(c)) return false;
     }
