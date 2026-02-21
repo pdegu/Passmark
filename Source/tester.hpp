@@ -5,6 +5,7 @@
 #include <functional>
 #include <sstream>
 #include <iostream>
+#include <utility>
 
 struct testerList {
     std::vector<std::string> testers;
@@ -41,6 +42,8 @@ public:
 
     // Returns a temporary stream object
     TesterStream log() const;
+
+    TesterStream logErr() const;
 
     std::vector<std::string> profileList;
 
@@ -83,7 +86,7 @@ public:
     status setVariableVoltageProfile(const std::string& profileNumStr, const int& sinkVoltage) const;
 
     // Set load current
-    status setLoad(const std::string& maxCurrent, const std::string& loadSpeed = "200") const;
+    status setLoad(const std::string& maxCurrent, const std::string& loadSpeed = "200", const DWORD& sleepTime = 500) const;
 
     // Set load to zero
     status unload() const;
@@ -94,12 +97,12 @@ public:
 
 class TesterStream {
 public:
-    TesterStream(const tester& t) : tRef(t) {}
+    TesterStream(const tester& t, const bool& error) : tRef(t), isError(error) {}
 
     // ADD THIS: Move Constructor
     // It transfers the buffer from the old object to the new one
     TesterStream(TesterStream&& other) noexcept 
-        : tRef(other.tRef), buffer(std::move(other.buffer)) {}
+        : tRef(other.tRef), buffer(std::move(other.buffer)), isError(other.isError) {}
 
     // Disable copying explicitly to prevent accidents
     TesterStream(const TesterStream&) = delete;
@@ -112,6 +115,10 @@ public:
 
         // Use a static Windows Critical Section
         static CRITICAL_SECTION cs;
+
+        // Choose stream based on flag
+        std::ostream& output = isError ? std::cerr : std::cout;
+
         static bool initialized = false;
         if (!initialized) {
             InitializeCriticalSection(&cs);
@@ -122,7 +129,7 @@ public:
 
         HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
         SetConsoleTextAttribute(hConsole, tRef.consoleColor);
-        std::cout << "(" << tRef.serialNumber << ") " << out << std::endl;
+        output << "(" << tRef.serialNumber << ") " << out << std::endl;
         SetConsoleTextAttribute(hConsole, 7);
 
         LeaveCriticalSection(&cs); // Unlock
@@ -137,10 +144,11 @@ public:
 private:
     const tester& tRef;
     std::stringstream buffer;
+    const bool& isError;
 };
 
 // Run Passmark executable from cmd prompt and return info provided
-std::string runCommand(const tester& dev, const std::string& commandArg);
+std::string runCommand(const tester& Tester, const std::string& commandArg);
 
 // Remove blank lines from Passmark console output string
 void removeBlankLines(std::string& string_to_filter);

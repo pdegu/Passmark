@@ -89,7 +89,9 @@ bool tester::tryClaim(std::string sn) {
     return false;
 }
 
-TesterStream tester::log() const { return TesterStream(*this); }
+TesterStream tester::log() const { return TesterStream(*this, false); }
+
+TesterStream tester::logErr() const { return TesterStream(*this, true); }
 
 void tester::getProfileList() {
     std::string output = runCommand(*this, "-p");
@@ -214,12 +216,12 @@ tester::status tester::setVariableVoltageProfile(const std::string& profileNumSt
     return getStatus();
 }
 
-tester::status tester::setLoad(const std::string& loadCurrent, const std::string& loadSpeed) const {
+tester::status tester::setLoad(const std::string& loadCurrent, const std::string& loadSpeed, const DWORD& sleepTime) const {
     // Send set load command to tester
     if (this->isPM125()) runCommand(*this, "-l " + loadCurrent);
     if (this->isPM240()) runCommand(*this, "-l " + loadCurrent + "," + loadSpeed);
  
-    Sleep(500); // Allow time for current to settle
+    Sleep(sleepTime); // Allow time for current to settle
     return getStatus();
 }
 

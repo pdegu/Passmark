@@ -12,9 +12,10 @@
 #include <atomic>
 #include <algorithm>
 #include <iomanip>
+#include <cstdlib>
 
 // Determine max output from available profiles
-std::string getMax(const tester& Tester) {
+std::string getMax(tester& Tester) {
     std::string indexStr = ""; // return value
 
     // Initialize loop variables
@@ -64,7 +65,7 @@ std::string getMax(const tester& Tester) {
 }
 
 // Logic for power bank stress test
-void StressTest(const tester& Tester, const std::string& profileStr, const std::string& duration) { //std::cout << "Pit stop!" << std::endl;
+void StressTest(tester& Tester, const std::string& profileStr, const std::string& duration) { //std::cout << "Pit stop!" << std::endl;
 
     auto magic = [&Tester, &profileStr]() {
         int setVoltage; // return value
@@ -73,7 +74,7 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         
         // Determine profile type and set to max supported voltage
         if (info.isVariableVoltage) {
-            size_t pos = info.voltageRange.find("-");
+            size_t pos = info.voltageRange.find("-"); 
 
             if (pos != std::string::npos) {
                 setVoltage = std::stoi(info.voltageRange.substr(pos + 1));
@@ -101,11 +102,13 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
     Tester.setLoad(iLoad);
 
     // Test loop
-    auto startTime = std::chrono::steady_clock::now();
-    auto limitMinutes = std::chrono::minutes(std::stoi(duration));
+    using namespace std::chrono;
+
+    auto startTime = steady_clock::now();
+    auto limitMinutes = minutes(std::stoi(duration));
     Tester.log() << "Starting " << limitMinutes.count() << "min test...";
     
-    int errCount = 0;
+    int errCount = 0; bool errWarning = false;
 
     while (true) {
         // Check for abort at the start of every iteration
@@ -115,20 +118,21 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
         }
 
         // Check remaining time
-        auto timeNow = std::chrono::steady_clock::now();
-        auto timeRemaining = std::chrono::duration_cast<std::chrono::seconds>(limitMinutes - (timeNow - startTime));
+        auto timeNow = steady_clock::now();
+        auto timerStart = timeNow;
+        auto timeRemaining = duration_cast<seconds>(limitMinutes - (timeNow - startTime));
 
-        auto hours = std::chrono::duration_cast<std::chrono::hours>(timeRemaining);
-        auto minutes = std::chrono::duration_cast<std::chrono::minutes>(timeRemaining % std::chrono::hours(1));
-        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(timeRemaining % std::chrono::minutes(1));
+        auto Hours = duration_cast<hours>(timeRemaining);
+        auto Minutes = duration_cast<minutes>(timeRemaining % hours(1));
+        auto Seconds = duration_cast<seconds>(timeRemaining % minutes(1));
 
-        if (seconds.count() < 0) seconds = std::chrono::seconds(0);
+        if (Seconds.count() < 0) Seconds = seconds(0);
 
         // Format output as h:mm:ss
         Tester.log() << "Time remaining: "
-                     << hours.count() << ":"
-                     << std::setfill('0') << std::setw(2) << minutes.count() << ":"
-                     << std::setfill('0') << std::setw(2) << seconds.count();
+                     << Hours.count() << ":"
+                     << std::setfill('0') << std::setw(2) << Minutes.count() << ":"
+                     << std::setfill('0') << std::setw(2) << Seconds.count();
 
         // Print stats to console
         tester::status Stats = Tester.getStatus();
@@ -140,28 +144,54 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
             break;
         }
 
+        // Check error status
+        if (errCount > 0 && !errWarning) errCount -= 1;
+        errWarning = false;
+
         // Detect when output has decreased
-        int Vm = std::stoi(Stats.sinkVoltage), Im = std::stoi(Stats.sinkMeasCurrent);
-        if (Vm < Vt * 0.8 && Vm > Vt * 1.2 || Im == 0) {
+        int Im = std::stoi(Stats.sinkMeasCurrent);
+        
+        if (Im == 0) { // Detect if load dropped
+            Tester.getProfileList();
             std::string newProfileStr = getMax(Tester);
             Tester.log() << "Drop in output detected. Setting new profile...";
 
-            // Check that backup profile exists
-            if (!newProfileStr.empty()) {
-                Stats = Tester.setProfile(newProfileStr);
-                std::vector<int> currentState = magic(); // Set backup profile
-                Vt = currentState[0], Vm = currentState[1];
-                Tester.log() << "New profile: " << newProfileStr;
+            Stats = Tester.setProfile(newProfileStr);
+            std::vector<int> currentState = magic(); // Set new profile
+            Vt = currentState[0], Vm = currentState[1];
+            Tester.log() << "New profile: " << Tester.profileList[std::stoi(newProfileStr) - 1];
 
-                // Check that profile is set
-                if (Vm > Vt * 0.95 && Vm < Vt * 1.05) {
-                    iLoad = std::to_string(currentState[2]);
-                    Stats = Tester.setLoad(iLoad); // Set load
+            // Check that profile is set
+            if (Vm > Vt * 0.95 && Vm < Vt * 1.05) {
+                auto resetLoad = [&](std::string iLoad) {
+                    Stats = Tester.setLoad(iLoad, "200", 1000); // Set load
+                    return std::stoi(Stats.sinkMeasCurrent);
+                    // return currentState[2] - std::stoi(Stats.sinkMeasCurrent);
+                };
+                
+                iLoad = std::to_string(currentState[2]);
+                Im = resetLoad(iLoad);
+
+                int timerDuration = 5; // seconds
+                // int errLimit = 100; // Acceptable error in setting load current
+                for (int t = 0; t < timerDuration; t += 1) {
+                    if (Im > 0) break;
+                    Im = resetLoad(iLoad);
+                    // if (iErr < errLimit)  break;
+                    // iErr = resetLoad(iLoad);
+                } 
+
+                // if (iErr > errLimit) {
+                if (Im == 0) {
+                    Tester.logErr() << "Unable to set load within " << timerDuration << "sec.";
+                    // Tester.logErr() << "Current did not stabilize within " << timerDuration << "sec.";
+                    errCount += 1;
+                    errWarning = true;
                 }
-
             } else {
-                std::cerr << "(" << Tester.serialNumber << ") Unable to set new profile." << std::endl;
+                Tester.logErr() << "Unable to set new profile.";
                 errCount += 1;
+                errWarning = true;
             }
         }
 
@@ -171,8 +201,8 @@ void StressTest(const tester& Tester, const std::string& profileStr, const std::
             throw std::runtime_error("DUT unresponive.");
         }
 
-        int sleepInterval = 30;
-        for (int i = 0; i < sleepInterval; ++i) {
+        int sleepTime = 30 - duration_cast<seconds>(steady_clock::now() - timerStart).count(); // 30 seconds - time spent in loop iteration
+        for (int i = 0; i < sleepTime; ++i) {
             if (g_abortRequested.load(std::memory_order_relaxed)) {
                 Tester.unload();
                 throw CtrlCAbort{};
