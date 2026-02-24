@@ -23,6 +23,30 @@ private:
     HANDLE hMutex; // Stores "lock" on Passmark tester
 
 public:
+    
+    class Sink
+    {
+    public:
+        Sink(tester& parent) : tRef(parent) {}
+
+        // Return sink connection status
+        bool isConnected() const;
+
+        // Toggle sink internal connection open
+        void connect() const;
+
+        // Toggle sink internal connection closed
+        void disconnect() const;
+
+        // Attempt to reconnect to sink
+        void reconnect() const;
+
+    private:
+        tester& tRef;
+    };
+
+    Sink sink;
+
     std::string serialNumber;
     std::string type;
 

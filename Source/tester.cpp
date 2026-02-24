@@ -6,10 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
-
-// ----------------------------------------
-// Tester class member function definitions
-// ----------------------------------------
+#include <utility>
 
 testerList findTesters() {
     testerList list;
@@ -46,12 +43,52 @@ testerList findTesters() {
     return list;
 }
 
-tester::tester() : hMutex(NULL), serialNumber(""), type("") {}
+/**
+ * tester::Sink class member function definitions
+ */
+bool tester::Sink::isConnected() const {
+    std::stringstream ss(runCommand(this->tRef, "-c"));
+    std::string line;
+    getline(ss, line, '\n');
 
-tester::tester(tester&& other) noexcept // Logic for move constructor
-    : hMutex(other.hMutex), // Copy mutex from temporary tester
-    serialNumber(other.serialNumber), // Copy serial number from temporary tester
-    type(other.type) // Copy type from temporary tester
+    auto helper = [&](std::string s) {
+        size_t pos = line.find(s);
+        if (pos != std::string::npos) {
+            return (line.find("NOT CONNECTED"), pos) ? true : false;
+        } else {
+            throw std::runtime_error("(" + this->tRef.serialNumber + ") Tester failed to respond.");
+        }
+    };
+
+    if (this->tRef.isPM125()) return helper("STATUS:");
+    if (this->tRef.isPM240()) return helper("SINK STATUS:");
+}
+
+void tester::Sink::connect() const {
+    if (this->tRef.isPM125()) runCommand(this->tRef, "-b 1");
+    if (this->tRef.isPM240()) runCommand(this->tRef, "-b 1,1");
+}
+
+void tester::Sink::disconnect() const {
+    if (this->tRef.isPM125()) runCommand(this->tRef, "-b 0");
+    if (this->tRef.isPM240()) runCommand(this->tRef, "-b 1,0");
+}
+
+void tester::Sink::reconnect() const {
+    this->disconnect();
+    this->connect(); 
+}
+
+/**
+ * tester constructor definitions
+ */
+tester::tester() : hMutex(NULL), serialNumber(""), type(""), sink(*this) {}
+
+tester::tester(tester&& other) noexcept : // Logic for move constructor
+    hMutex(std::move(other.hMutex)), // Copy mutex from temporary tester
+    serialNumber(std::move(other.serialNumber)), // Copy serial number from temporary tester
+    type(std::move(other.type)), // Copy type from temporary tester
+    sink(*this)
 {
     other.hMutex = NULL; // temporary tester mutex must be NULL after copy or destructor will close copied mutex
 }

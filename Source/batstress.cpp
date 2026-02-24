@@ -91,10 +91,14 @@ void StressTest(tester& Tester, const std::string& profileStr, const std::string
 
     std::vector<int> initialState = magic();
 
-    // Check that voltage is set
-    int Vt = initialState[0] /* Target voltage */, Vm = initialState[1]; // Measured voltage
-    if (Vm < Vt * 0.95 && Vm > Vt * 1.05) {
-        throw std::runtime_error("(" + Tester.serialNumber + ") Unable to set voltage.");
+    // Check that voltage is set. Retry up to 3 times
+    int attempts = 1;
+    while (true) {
+        int Vt = initialState[0] /* Target voltage */, Vm = initialState[1]; // Measured voltage
+        if (Vm > Vt * 0.95 && Vm < Vt * 1.05) break;
+        else if (attempts > 3) throw std::runtime_error("(" + Tester.serialNumber + ") Unable to set voltage.");
+        initialState = magic();
+        ++attempts;
     }
 
     // Set load
@@ -148,17 +152,40 @@ void StressTest(tester& Tester, const std::string& profileStr, const std::string
         if (errCount > 0 && !errWarning) errCount -= 1;
         errWarning = false;
 
+        // Helper lambda to handle early termination of test
+        auto abortTest = [&Tester]() {
+            Tester.unload();
+            throw std::runtime_error("DUT unresponsive.");
+        };
+
         // Detect when output has decreased
         int Im = std::stoi(Stats.sinkMeasCurrent);
         
         if (Im == 0) { // Detect if load dropped
+
+            // Check if DUT has been disconnected and attempt to reconnect
+            for (int attempts = 0; attempts < 3; ++attempts) {
+                if (!Tester.sink.isConnected()) {
+                    Tester.log() << "Attempting to reconnect...";
+                    Tester.sink.reconnect();
+                }
+                else break;
+            }
+            
+            // If DUT is still disconnected, terminate test
+            if (!Tester.sink.isConnected()) {
+                Tester.logErr() << "Could not connect to DUT after 3 attempts. Terminating test...";
+                abortTest();
+            }
+
+            // Check for change in advertised profiles
             Tester.getProfileList();
             std::string newProfileStr = getMax(Tester);
             Tester.log() << "Drop in output detected. Setting new profile...";
 
             Stats = Tester.setProfile(newProfileStr);
             std::vector<int> currentState = magic(); // Set new profile
-            Vt = currentState[0], Vm = currentState[1];
+            int Vt = currentState[0], Vm = currentState[1];
             Tester.log() << "New profile: " << Tester.profileList[std::stoi(newProfileStr) - 1];
 
             // Check that profile is set
@@ -166,28 +193,24 @@ void StressTest(tester& Tester, const std::string& profileStr, const std::string
                 auto resetLoad = [&](std::string iLoad) {
                     Stats = Tester.setLoad(iLoad, "200", 1000); // Set load
                     return std::stoi(Stats.sinkMeasCurrent);
-                    // return currentState[2] - std::stoi(Stats.sinkMeasCurrent);
                 };
                 
                 iLoad = std::to_string(currentState[2]);
                 Im = resetLoad(iLoad);
 
                 int timerDuration = 5; // seconds
-                // int errLimit = 100; // Acceptable error in setting load current
                 for (int t = 0; t < timerDuration; t += 1) {
                     if (Im > 0) break;
                     Im = resetLoad(iLoad);
-                    // if (iErr < errLimit)  break;
-                    // iErr = resetLoad(iLoad);
                 } 
 
                 // if (iErr > errLimit) {
                 if (Im == 0) {
                     Tester.logErr() << "Unable to set load within " << timerDuration << "sec.";
-                    // Tester.logErr() << "Current did not stabilize within " << timerDuration << "sec.";
                     errCount += 1;
                     errWarning = true;
                 }
+
             } else {
                 Tester.logErr() << "Unable to set new profile.";
                 errCount += 1;
@@ -196,9 +219,8 @@ void StressTest(tester& Tester, const std::string& profileStr, const std::string
         }
 
         if (errCount >= 3) {
-            std::cerr << "DUT failed to respond after " << errCount << " attempts. Exiting program..." << std::endl;
-            Tester.unload();
-            throw std::runtime_error("DUT unresponive.");
+            Tester.logErr() << "DUT failed to respond after " << errCount << " attempts. Terminating test...";
+            abortTest();
         }
 
         int sleepTime = 30 - duration_cast<seconds>(steady_clock::now() - timerStart).count(); // 30 seconds - time spent in loop iteration
