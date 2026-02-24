@@ -22,7 +22,7 @@ std::string getMax(tester& Tester) {
     int voltage = 5000, current = 500, pNow;
     int pLast = voltage * current;
 
-    for (std::string line : Tester.profileList) { // Iterate through output line by line
+    for (std::string line : Tester.sink.profileList) { // Iterate through output line by line
         std::string searchStr = "INDEX:";
         size_t pos1 = line.find(searchStr);
 
@@ -69,7 +69,7 @@ void StressTest(tester& Tester, const std::string& profileStr, const std::string
 
     auto magic = [&Tester, &profileStr]() {
         int setVoltage; // return value
-        tester::ProfileInfo info = Tester.getProfileInfo(profileStr);
+        tester::Sink::ProfileInfo info = Tester.sink.getProfileInfo(profileStr);
         tester::status Stats;
         
         // Determine profile type and set to max supported voltage
@@ -179,14 +179,14 @@ void StressTest(tester& Tester, const std::string& profileStr, const std::string
             }
 
             // Check for change in advertised profiles
-            Tester.getProfileList();
+            Tester.sink.getProfiles();
             std::string newProfileStr = getMax(Tester);
             Tester.log() << "Drop in output detected. Setting new profile...";
 
             Stats = Tester.setProfile(newProfileStr);
             std::vector<int> currentState = magic(); // Set new profile
             int Vt = currentState[0], Vm = currentState[1];
-            Tester.log() << "New profile: " << Tester.profileList[std::stoi(newProfileStr) - 1];
+            Tester.log() << "New profile: " << Tester.sink.profileList[std::stoi(newProfileStr) - 1];
 
             // Check that profile is set
             if (Vm > Vt * 0.95 && Vm < Vt * 1.05) {
@@ -264,12 +264,12 @@ int main() {
              * Insert code for getting part number here
              */
 
-            Tester.getProfileList();
-            int numProfiles = Tester.profileList.size();
+            Tester.sink.getProfiles();
+            int numProfiles = Tester.sink.profileList.size();
             if (numProfiles == 0) throw std::runtime_error("No DUT found."); // Check if no profiles are found
 
             std::cout << "NUM PROFILES:" << numProfiles << std::endl;
-            for (std::string s : Tester.profileList) std::cout << s << std::endl;
+            for (std::string s : Tester.sink.profileList) std::cout << s << std::endl;
 
             // Ask user which profile to test
             std::cout << "\nSelect profile to test or press enter for auto select:\t";

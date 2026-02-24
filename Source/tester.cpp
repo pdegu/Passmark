@@ -79,17 +79,70 @@ void tester::Sink::reconnect() const {
     this->connect(); 
 }
 
+void tester::Sink::getProfiles() {
+    std::string output = runCommand(this->tRef, "-p");
+    if (output.empty()) {
+        std::string errorMsg = (this->tRef.serialNumber.empty()) ? "" : "(" + this->tRef.serialNumber + ") ";
+        throw std::runtime_error(errorMsg + "No response from tester.");
+    }
+
+    removeBlankLines(output);
+
+    std::stringstream ss(output);
+    std::string line;
+    while (getline(ss, line, '\n')) {
+        size_t pos;
+        if (line.find("INDEX:") != std::string::npos) this->profileList.push_back(line);
+    }
+}
+
+tester::Sink::ProfileInfo tester::Sink::getProfileInfo(const std::string& profile) const {
+    ProfileInfo info;
+    std::string searchStr = "INDEX:" + profile;
+    std::string profileStr = this->profileList[std::stoi(profile) - 1]; // DON'T LEAVE LIKE THIS!
+    size_t foundPos = profileStr.find(searchStr);
+    if (foundPos != std::string::npos) { // match for searchStr was found
+        size_t tPos1 = profileStr.find("TYPE:", foundPos) + 5;
+        std::string type = "";
+        size_t p = tPos1;
+        while (profileStr[p] != ',') {
+            type.push_back(profileStr[p]);
+            if (p < profileStr.size()) p += 1;
+        }
+
+        // Set variable voltage flag if detected
+        for (std::string s : VariableVoltageTypes) {
+            if (type == s) info.isVariableVoltage = true;
+        }
+
+        // Populate voltage range
+        size_t vPos1 = profileStr.find("V:", foundPos) + 2;
+        size_t vPos2 = profileStr.find("mV", foundPos);
+        info.voltageRange = profileStr.substr(vPos1, vPos2 - vPos1);
+
+        // Populate max current
+        size_t iPos1 = profileStr.find("I:", foundPos) + 2;
+        size_t iPos2 = profileStr.find("mA", foundPos);
+        info.maxCurrent = profileStr.substr(iPos1, iPos2 - iPos1);
+    } else throw std::runtime_error("(" + this->tRef.serialNumber + ") Profile not found.");
+
+    return info;
+}
+
 /**
  * tester constructor definitions
  */
 tester::tester() : hMutex(NULL), serialNumber(""), type(""), sink(*this) {}
 
 tester::tester(tester&& other) noexcept : // Logic for move constructor
-    hMutex(std::move(other.hMutex)), // Copy mutex from temporary tester
+    hMutex(other.hMutex), // Copy mutex from temporary tester
     serialNumber(std::move(other.serialNumber)), // Copy serial number from temporary tester
     type(std::move(other.type)), // Copy type from temporary tester
     sink(*this)
 {
+    // Explicitly move the data from the old sink's list to the new one
+    this->sink.profileList = std::move(other.sink.profileList);
+
     other.hMutex = NULL; // temporary tester mutex must be NULL after copy or destructor will close copied mutex
 }
 
@@ -130,23 +183,6 @@ TesterStream tester::log() const { return TesterStream(*this, false); }
 
 TesterStream tester::logErr() const { return TesterStream(*this, true); }
 
-void tester::getProfileList() {
-    std::string output = runCommand(*this, "-p");
-    if (output.empty()) {
-        std::string errorMsg = (this->serialNumber.empty()) ? "" : "(" + this->serialNumber + ") ";
-        throw std::runtime_error(errorMsg + "No response from tester.");
-    }
-
-    removeBlankLines(output);
-
-    std::stringstream ss(output);
-    std::string line;
-    while (getline(ss, line, '\n')) {
-        size_t pos;
-        if (line.find("INDEX:") != std::string::npos) this->profileList.push_back(line);
-    }
-}
-
 std::string tester::getProfiles(const bool& toConsole) const {
     std::string output = runCommand(*this, "-p");
     if (output.empty()) {
@@ -158,39 +194,6 @@ std::string tester::getProfiles(const bool& toConsole) const {
     if (toConsole) std:: cout << output << std::endl;
 
     return output;
-}
-
-tester::ProfileInfo tester::getProfileInfo(const std::string& profile) const {
-    ProfileInfo info;
-    std::string searchStr = "INDEX:" + profile;
-    std::string profileStr = this->profileList[std::stoi(profile) - 1];
-    size_t foundPos = profileStr.find(searchStr);
-    if (foundPos != std::string::npos) { // match for searchStr was found
-        size_t tPos1 = profileStr.find("TYPE:", foundPos) + 5;
-        std::string type = "";
-        size_t p = tPos1;
-        while (profileStr[p] != ',') {
-            type.push_back(profileStr[p]);
-            if (p < profileStr.size()) p += 1;
-        }
-
-        // Set variable voltage flag if detected
-        for (std::string s : VariableVoltageTypes) {
-            if (type == s) info.isVariableVoltage = true;
-        }
-
-        // Populate voltage range
-        size_t vPos1 = profileStr.find("V:", foundPos) + 2;
-        size_t vPos2 = profileStr.find("mV", foundPos);
-        info.voltageRange = profileStr.substr(vPos1, vPos2 - vPos1);
-
-        // Populate max current
-        size_t iPos1 = profileStr.find("I:", foundPos) + 2;
-        size_t iPos2 = profileStr.find("mA", foundPos);
-        info.maxCurrent = profileStr.substr(iPos1, iPos2 - iPos1);
-    } else throw std::runtime_error("(" + this->serialNumber + ") Profile not found.");
-
-    return info;
 }
 
 void tester::assignType(const std::string& typeStr) {
@@ -267,63 +270,63 @@ tester::status tester::unload() const {
     return this->setLoad("0");
 }
 
-void tester::testSinkVoltage(const std::string& profileStr) const {
-    /**
-     * Main logic for USB protocol test is implemented here.
-     * (1) Check if profileStr is empty. If its not empty, only test profiles specified. Assume that profiles were already checked to be valid.
-     * (2) Iterate through each profile.
-     * (3) Check if profile is a variable voltage profile. If true, set up loop to iterate through voltage range
-     */
+// void tester::testSinkVoltage(const std::string& profileStr) const {
+//     /**
+//      * Main logic for USB protocol test is implemented here.
+//      * (1) Check if profileStr is empty. If its not empty, only test profiles specified. Assume that profiles were already checked to be valid.
+//      * (2) Iterate through each profile.
+//      * (3) Check if profile is a variable voltage profile. If true, set up loop to iterate through voltage range
+//      */
 
-    auto runCurrentSweep = [this](std::string profile) {
-        auto CurrentSweep = [this](std::string maxCurrent) {
-            int c = 0;
-            int currentStep = 50; // Current step in mA
-            while (c <= std::stoi(maxCurrent)) {
-                status Stats = this->setLoad(std::to_string(c));
-                c += currentStep;
-            }
-            this->setLoad("0");
-        };
+//     auto runCurrentSweep = [this](std::string profile) {
+//         auto CurrentSweep = [this](std::string maxCurrent) {
+//             int c = 0;
+//             int currentStep = 50; // Current step in mA
+//             while (c <= std::stoi(maxCurrent)) {
+//                 status Stats = this->setLoad(std::to_string(c));
+//                 c += currentStep;
+//             }
+//             this->setLoad("0");
+//         };
 
-        ProfileInfo info = getProfileInfo(profile);
-        if (info.isVariableVoltage) {
-            size_t pos = info.voltageRange.find("-");
-            if (pos != std::string::npos) {
-                int vMin = std::stoi(info.voltageRange.substr(0,pos));
-                int vMax = std::stoi(info.voltageRange.substr(pos + 1));
-                int vStep = 1000; // Voltage step in mV for variable voltage profiles
+//         ProfileInfo info = getProfileInfo(profile);
+//         if (info.isVariableVoltage) {
+//             size_t pos = info.voltageRange.find("-");
+//             if (pos != std::string::npos) {
+//                 int vMin = std::stoi(info.voltageRange.substr(0,pos));
+//                 int vMax = std::stoi(info.voltageRange.substr(pos + 1));
+//                 int vStep = 1000; // Voltage step in mV for variable voltage profiles
 
-                for (int v = vMin; v < vMax; v += vStep - v % vStep) {
-                    status Stats = this->setVariableVoltageProfile(profile, v);
+//                 for (int v = vMin; v < vMax; v += vStep - v % vStep) {
+//                     status Stats = this->setVariableVoltageProfile(profile, v);
 
-                    // Check that profile was set successfully
-                    int setVoltage = std::stoi(Stats.sinkVoltage);
-                    if (setVoltage > v * 0.95 && setVoltage < v * 1.05) {
-                        CurrentSweep(info.maxCurrent);
-                    } else printf("(%s) Unable to set voltage to %imV\n", this->serialNumber, v); // <<< MODIFY THIS LINE ONCE PROFILE RETURN FUNCTION EXISTSS
-                }
-            }
-        } else {
-            status Stats = this->setProfile(profile);
+//                     // Check that profile was set successfully
+//                     int setVoltage = std::stoi(Stats.sinkVoltage);
+//                     if (setVoltage > v * 0.95 && setVoltage < v * 1.05) {
+//                         CurrentSweep(info.maxCurrent);
+//                     } else printf("(%s) Unable to set voltage to %imV\n", this->serialNumber, v); // <<< MODIFY THIS LINE ONCE PROFILE RETURN FUNCTION EXISTSS
+//                 }
+//             }
+//         } else {
+//             status Stats = this->setProfile(profile);
 
-            // Check that profile was set successfully
-            int setVoltage = std::stoi(Stats.sinkVoltage);
-            int targetVoltage = std::stoi(info.voltageRange);
-            if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
-                CurrentSweep(info.maxCurrent);
-            } else printf("(%s) Unable to set voltage to %imV\n", this->serialNumber, targetVoltage);
-        }
-    };
+//             // Check that profile was set successfully
+//             int setVoltage = std::stoi(Stats.sinkVoltage);
+//             int targetVoltage = std::stoi(info.voltageRange);
+//             if (setVoltage > targetVoltage * 0.95 && setVoltage < targetVoltage * 1.05) {
+//                 CurrentSweep(info.maxCurrent);
+//             } else printf("(%s) Unable to set voltage to %imV\n", this->serialNumber, targetVoltage);
+//         }
+//     };
 
-    if (!profileStr.empty()) { // One or more profiles were specified
-        std::stringstream ss(profileStr);
-        std::string field;
-        while (getline(ss, field, ',')) {
-            runCurrentSweep(field);
-        }
-    }
-}
+//     if (!profileStr.empty()) { // One or more profiles were specified
+//         std::stringstream ss(profileStr);
+//         std::string field;
+//         while (getline(ss, field, ',')) {
+//             runCurrentSweep(field);
+//         }
+//     }
+// }
 
 // ----------------------------------------
 // Other functions

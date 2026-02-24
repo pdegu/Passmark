@@ -23,10 +23,12 @@ private:
     HANDLE hMutex; // Stores "lock" on Passmark tester
 
 public:
-    
+    // Define sink-only functions
     class Sink
     {
     public:
+        std::vector<std::string> profileList;
+
         Sink(tester& parent) : tRef(parent) {}
 
         // Return sink connection status
@@ -41,6 +43,19 @@ public:
         // Attempt to reconnect to sink
         void reconnect() const;
 
+        // Get current supported profiles
+        void getProfiles();
+
+        // Object to store detected profile info
+        struct ProfileInfo {
+            bool isVariableVoltage = false; // False by default
+            std::string voltageRange;
+            std::string maxCurrent;
+        };
+
+        // Get profile info
+        ProfileInfo getProfileInfo(const std::string& profile) const;
+
     private:
         tester& tRef;
     };
@@ -50,7 +65,8 @@ public:
     std::string serialNumber;
     std::string type;
 
-    // Constructors and destructors
+    int consoleColor = 7; // Default to white
+
     tester(); // Default constructor
     tester(tester&& other) noexcept; // Move constructor, argument is temporary tester object
     ~tester(); // Deconstructor
@@ -59,32 +75,16 @@ public:
     tester(const tester&) = delete;
     tester& operator=(const tester&) = delete;
 
-    // Declarations for functions defined in tester.cpp
+    // tester class functions
     bool tryClaim(std::string sn);
-
-    int consoleColor = 7; // Default to white
 
     // Returns a temporary stream object
     TesterStream log() const;
 
     TesterStream logErr() const;
 
-    std::vector<std::string> profileList;
-
-    void getProfileList();
-
     // Get supported profiles from DUT
     std::string getProfiles(const bool& toConsole) const;
-
-    // Object to store detected profile info
-    struct ProfileInfo {
-        bool isVariableVoltage = false; // False by default
-        std::string voltageRange;
-        std::string maxCurrent;
-    };
-
-    // Get profile info
-    ProfileInfo getProfileInfo(const std::string& profile) const;
     
     // Assign tester type
     void assignType(const std::string& typeStr);
